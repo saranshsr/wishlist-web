@@ -147,6 +147,14 @@
   /* Too narrow for the side gutter (the panel is 1200px): dock bottom-right
      as a horizontal pill beside the picker instead of covering the panel's
      edge; --picker-half is measured from the picker in JS. */
+  /* Eight versions: labels never wrap; on narrower windows the picker
+     tightens, and below 1100px the edge toggle moves to the top-right corner
+     so the two pills can't collide. */
+  .proto-picker-item{white-space:nowrap}
+  @media (max-width:1280px){ .proto-picker{font-size:12px} .proto-picker-item{padding:0 8px} }
+  @media (max-width:1100px){
+    .proto-edge{top:16px !important;bottom:auto !important;left:auto !important;right:16px !important;transform:none !important;flex-direction:row !important;align-items:center;border-radius:999px}
+  }
   @media (max-width:1559px){
     .proto-edge{top:auto;bottom:24px;right:auto;left:calc(50% + var(--picker-half, 150px) + 10px);transform:none;flex-direction:row;align-items:center;border-radius:999px}
     .proto-edge-label{padding:0 6px 0 10px}
