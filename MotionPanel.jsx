@@ -133,6 +133,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      Scrolling down goes to the next collection, which is also the direction
      the rail runs — so `dir` feeds the same Slide axis a rail click would. */
   const stageRef = React.useRef(null);
+  const frameRef = React.useRef(null);
   const activeRef = React.useRef(0);
   React.useEffect(() => { activeRef.current = active; }, [active]);
 
@@ -143,15 +144,11 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // passes this within a few frames, so a genuine gesture always registers;
     // a stray one or two pixels of drift does not.
     const OVERSCROLL = 48;
-    // Stillness required before another switch can fire. Long enough that one
-    // gesture stays one switch even when the grid fits and therefore sits at an
-    // edge for every single event — at 220ms a slow flick skipped a collection.
-    const QUIET = 400;
     // Floor on the time between switches, independent of event spacing. The
     // quiet timer alone can re-arm mid-gesture if events arrive sparsely, and
     // one fling would then jump two collections. Nothing useful happens inside
     // this window anyway — the transition itself runs ~430ms.
-    const MIN_GAP = 420;
+    const MIN_GAP = 380;
     // Rubber band. Without it an overscroll below the threshold produces
     // nothing at all — no scroll, no movement, no hint the gesture landed —
     // which is what made the switch feel unreliable. The band decelerates as it
@@ -177,86 +174,115 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     };
 
 
-    const g = { armed:true, acc:0, timer:0, last:0, first:0 };
+    /* ---- gesture detection ----
+       A switch disarms the wheel until the NEXT gesture starts, so one fling
+       is one switch. The old rule — re-arm after 400ms of wheel silence — never
+       fired on a trackpad: macOS momentum keeps sending wheel events for 1–2s,
+       so a second flick inside that tail (or a flick back the other way) was
+       swallowed and the panel felt stuck. A new gesture is now any of:
+         · a pause   — no wheel event for 180ms (mouse notches, a fresh touch)
+         · a reversal — ≥10px the other way (momentum never reverses)
+         · a surge   — while coasting (5+ non-increasing deltas = momentum),
+                       a delta more than twice the tail's floor + 6px: a finger
+                       landing and flicking again on top of the decay.
+       A gesture that crosses the threshold inside MIN_GAP of the last switch
+       is queued and fires when the gap ends instead of being dropped. */
+    const PAUSE = 180, REVERSE = 10;
+    const g = { armed:true, acc:0, timer:0, last:0, first:0, lastT:0, lastSign:0,
+                prevA:0, run:0, coast:false, floor:0, pending:0, speed:0 };
+    // Every collection here fits the stage. Measure the grid's layout height
+    // (offsetHeight ignores transforms): mid-transition the cards' transforms
+    // inflate scrollHeight, the stage briefly looked scrollable, and a wheel
+    // then scrolled the content instead of switching.
+    const scrolls = () => { const p = el.querySelector('.mp-presence'); return !!p && p.offsetHeight > el.clientHeight + 2; };
+
+    const fire = (down) => {
+      const next = activeRef.current + (down ? 1 : -1);
+      if (next < 0 || next >= COLLECTIONS.length) return;
+      launchRef.current = { v: (down ? -1 : 1) * g.speed };
+      release();
+      g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now(); g.coast = false;
+      setDir(down ? 1 : -1);
+      setActive(next);
+      // Land on the edge you travelled towards, so the next overscroll in the
+      // same direction is a fresh gesture rather than an instant re-trigger.
+      if (scrolls()) requestAnimationFrame(() => requestAnimationFrame(() => {
+        el.scrollTop = down ? 0 : el.scrollHeight;
+      }));
+    };
 
     const onWheel = (e) => {
       if (!e.deltaY) return;
-      const down = e.deltaY > 0;
-      const atEdge = down
-        ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2
-        : el.scrollTop <= 1;
+      const now = performance.now();
+      const a = Math.abs(e.deltaY), sign = Math.sign(e.deltaY), down = sign > 0;
+
+      // Small opposite-direction wobble inside a gesture is ignored outright.
+      const wobble = g.lastSign && sign !== g.lastSign && a < REVERSE && now - g.lastT < PAUSE;
+      if (wobble) { e.preventDefault(); return; }
+
+      const paused = now - g.lastT > PAUSE;
+      const reversed = !paused && g.lastSign && sign !== g.lastSign;
+      g.run = (!paused && !reversed && a <= g.prevA) ? g.run + 1 : 0;
+      if (g.run >= 5 && !g.coast) { g.coast = true; g.floor = a; }
+      if (g.coast) g.floor = Math.min(g.floor, a);
+      const surged = g.coast && a > g.floor * 2 + 6;
+      if (paused || reversed || surged) {
+        g.armed = true; g.acc = 0; g.first = 0; g.coast = false; g.run = 0;
+      }
+      g.prevA = a; g.lastT = now; g.lastSign = sign;
 
       clearTimeout(g.timer);
-      g.timer = setTimeout(() => { g.armed = true; g.acc = 0; release(); }, QUIET);
+      g.timer = setTimeout(() => { g.armed = true; g.acc = 0; g.coast = false; release(); }, PAUSE);
 
+      // Over the rail or header there is no native scroll to hand the wheel
+      // to, so the whole panel counts as being at an edge.
+      const inStage = el.contains(e.target);
+      const atEdge = !inStage || !scrolls() || (down
+        ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2
+        : el.scrollTop <= 1);
       if (!atEdge) { g.acc = 0; release(); return; }
-      // One switch per gesture: momentum keeps firing wheel events long after
-      // the user let go, which would otherwise skip straight past a collection.
-      if (!g.armed || performance.now() - g.last < MIN_GAP) { e.preventDefault(); return; }
+      e.preventDefault();
+      if (!g.armed) return;
 
-      // Opposite-direction events inside a gesture: a few px of trackpad wobble
-      // is ignored, a real reversal starts a new gesture. Summing them signed
-      // let a wobble cancel out most of a scroll and swallow it entirely.
-      if (g.acc && Math.sign(e.deltaY) !== Math.sign(g.acc)) {
-        if (Math.abs(e.deltaY) < 25) return;
-        g.acc = 0;
-      }
-      if (!g.acc) g.first = performance.now();
+      if (!g.acc) g.first = now;
       g.acc += e.deltaY;
-
       const next = activeRef.current + (down ? 1 : -1);
       const atEnd = next < 0 || next >= COLLECTIONS.length;
 
       // Stretch while the gesture builds, and keep stretching — but never
       // switch — when there is nowhere further to go.
       if (atEnd || Math.abs(g.acc) < OVERSCROLL) {
-        e.preventDefault();
         band(g.acc, down, atEnd ? PULL_END : PULL);
         return;
       }
-
-      e.preventDefault();
-      /* Hand the gesture's energy to the transition. The band is stretched and
-         moving when the threshold fires; releasing it to 0 and entering the new
-         grid from a standing start makes the two read as strangers. Snap the
-         band (no 280ms return — the cards take over) and pass the wheel's speed
-         into the entrance spring as initial velocity. Sign: a downward wheel
-         drives content upward, so the velocity is negative.
-
-         The band is EASED back, not snapped. Snapping looked right on paper —
-         "the cards take over" — but the cards taking over are the incoming
-         ones, while the outgoing grid is still fully opaque: it teleported
-         8.4px in a single frame. The 280ms return overlaps the exit instead. */
-      const dt = Math.max(16, performance.now() - (g.first || performance.now()));
-      /* Capped at 1400px/s, measured not guessed. Uncapped, a hard fling gave
-         the spring enough energy to overshoot 36px on a 44px travel — the grid
-         visibly flew past and came back. Measured overshoot by cap:
-             900 -> 3.6px flat (gradient gone, every flick saturates)
-            1400 -> 4.2px gentle, 11px firm      <- here
-            1900 -> 3.5px gentle, 21px firm      (too loose)
-         1400 keeps a real gradient and bounds the top at a quarter of the
-         travel. */
-      const speed = Math.min(1400, Math.abs(g.acc) / dt * 1000);
-      launchRef.current = { v: -Math.sign(e.deltaY) * speed };
-      release();
-      g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now();
-      setDir(down ? 1 : -1);
-      setActive(next);
-      // Land on the edge you travelled towards, so the next overscroll in the
-      // same direction is a fresh gesture rather than an instant re-trigger.
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        el.scrollTop = down ? 0 : el.scrollHeight;
-      }));
+      /* Hand the gesture's speed to the transition as spring velocity, capped
+         at 1400px/s — measured: uncapped, a hard fling overshot 36px on a 44px
+         travel; 1400 keeps a real gradient (4px gentle, 11px firm). The band
+         is eased back over 280ms rather than snapped, so the outgoing grid
+         doesn't teleport. */
+      const dt = Math.max(16, now - (g.first || now));
+      g.speed = Math.min(1400, Math.abs(g.acc) / dt * 1000);
+      const wait = MIN_GAP - (now - g.last);
+      g.armed = false; g.acc = 0;
+      if (wait > 0) {
+        // Too soon after the last switch: queue it rather than drop it.
+        band(OVERSCROLL, down, PULL);
+        clearTimeout(g.pending);
+        g.pending = setTimeout(() => fire(down), wait);
+        return;
+      }
+      fire(down);
     };
 
-    el.addEventListener('wheel', onWheel, { passive:false });
+    const root = frameRef.current || el;
+    root.addEventListener('wheel', onWheel, { passive:false });
     // Releasing on pointer-leave stops a stretched band hanging there if the
     // cursor leaves mid-gesture and no further wheel events arrive.
-    el.addEventListener('pointerleave', release);
+    root.addEventListener('pointerleave', release);
     return () => {
-      el.removeEventListener('wheel', onWheel);
-      el.removeEventListener('pointerleave', release);
-      clearTimeout(g.timer);
+      root.removeEventListener('wheel', onWheel);
+      root.removeEventListener('pointerleave', release);
+      clearTimeout(g.timer); clearTimeout(g.pending);
     };
   }, []);
 
@@ -466,12 +492,49 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   // language as the folder previews in the rail.
   const tilt = (i) => [-6, 4, -3, 7, -5, 3, -2][i % 7];
 
-  /* Deal — the old cards gather into one tilted stack in the first slot, then
-     the new collection is dealt out of it card by card. Stays inside the grid. */
+  /* Deal — the old cards gather into a neat stack on the first slot, then the
+     new collection is dealt out of it card by card.
+     Apple-grade pass (23 Sep):
+       · springs with visualDuration/bounce instead of stiffness guesses, so
+         the timing is what it says: gather 0.32s critically damped (a card
+         being collected shouldn't wobble), deal 0.42s with bounce 0.08 — the
+         faint settle of a card landing on a table, not a bounce.
+       · a real pile: each card sits 2px lower than the one above it with a
+         ±2.5° turn (was ±7°, which read as scattered, not stacked), top card
+         square, all at 0.955 so the pile sits slightly back in depth.
+       · lift: a soft shadow (.mp-lift, opacity only) is on while a card is in
+         the air and fades as it lands, so travel reads as depth, not a
+         flat slide.
+       · the new pile materialises 80ms before it starts dealing, so every
+         card is seen leaving the pile rather than fading in mid-flight. */
+  const dealTilt = (i) => [0, -2.4, 1.8, -1.2, 2.6, -1.8, 1.2][i % 7];
+  const DEAL_IN  = { type:'spring', visualDuration:0.42, bounce:0.08 };
+  const DEAL_OUT = { type:'spring', visualDuration:0.32, bounce:0 };
+  const dealTiming = (i, n) => ({ inDelay: 0.12 + i * 0.026, outDelay: (n - 1 - i) * 0.014 });
   const dealV = (i, n) => {
     const [cx, cy] = cardCentre(i), [px, py] = cardCentre(0);
-    return stackV({ i, n, tx: px - cx, ty: py - cy, s0: 0.92, rot: i === 0 ? 0 : tilt(i),
-      inDelay: 0.1 + i * 0.026, outDelay: (n - 1 - i) * 0.012, outDur: 0.2 });
+    const { inDelay, outDelay } = dealTiming(i, n);
+    if (reduce) return {
+      enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2 } }, exit:{ opacity:0, transition:{ duration:0.14 } },
+    };
+    const pile = { x: px - cx, y: py - cy + Math.min(i, 4) * 2, scale: 0.955, rotate: dealTilt(i) };
+    return {
+      enter:  { ...pile, opacity:0 },
+      center: { x:0, y:0, scale:1, rotate:0, opacity:1, transition:{
+        default:{ ...DEAL_IN, delay: inDelay },
+        opacity:{ duration:0.14, ease:EASE_OUT, delay: inDelay - 0.08 } } },
+      exit:   { ...pile, opacity:0, transition:{
+        default:{ ...DEAL_OUT, delay: outDelay },
+        opacity:{ duration:0.14, ease:EASE_OUT, delay: outDelay + 0.26 } } },
+    };
+  };
+  const dealLiftV = (i, n) => {
+    const { inDelay, outDelay } = dealTiming(i, n);
+    return {
+      enter:  { opacity: reduce ? 0 : 1 },
+      center: { opacity:0, transition:{ duration:0.4, ease:EASE_OUT, delay: inDelay + 0.14 } },
+      exit:   { opacity: reduce ? 0 : 1, transition:{ duration:0.16, ease:EASE_OUT, delay: outDelay } },
+    };
   };
 
   /* Folder Flight — the old cards fly back into THEIR folder in the rail and
@@ -554,6 +617,26 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       transition:{ y:{ duration:0.32, ease:EASE_OUT }, scale:{ duration:0.32, ease:EASE_OUT }, opacity:{ duration:0.26, ease:EASE_OUT }, filter:{ duration:0.26 } } }),
   };
 
+  /* V3 · Parallax — V1's unfurl with depth. The whole incoming section rises
+     72px AND scales up from 0.93 to full size on critically damped springs
+     (the scale a touch slower than the travel, so it keeps growing into place
+     after it has arrived — the iOS "comes up to meet you" feel), while its
+     rows still unfurl on V1's card stagger. The outgoing section recedes: half
+     the travel (36px), down to 0.94, faded in 200ms — the background layer
+     moving slower than the foreground is the parallax. Overlapped
+     (popLayout), scaled about the panel's middle like V2. */
+  const PARALLAX_IN = 72, PARALLAX_OUT = 36;
+  const parallaxV = {
+    enter: (d)=>({ y: reduce?0:(d>0?PARALLAX_IN:-PARALLAX_IN), scale: reduce?1:0.93, opacity:0 }),
+    center:{ y:0, scale:1, opacity:1, transition:{
+      y:{ type:'spring', visualDuration:0.5, bounce:0,
+          ...(launchRef.current ? { velocity: launchRef.current.v * PARALLAX_IN / 44 } : null) },
+      scale:{ type:'spring', visualDuration:0.62, bounce:0 },
+      opacity:{ duration:0.28, ease:EASE_OUT, delay:0.04 } } },
+    exit:(d)=>({ y: reduce?0:(d>0?-PARALLAX_OUT:PARALLAX_OUT), scale: reduce?1:0.94, opacity:0, transition:{
+      y:{ duration:0.34, ease:EASE_OUT }, scale:{ duration:0.34, ease:EASE_OUT }, opacity:{ duration:0.2, ease:EASE_OUT } } }),
+  };
+
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -565,11 +648,12 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   /* Per-style grid + card choreography for the staggered family. */
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
+    parallax:   { grid: parallaxV,   card: cardV,       delay: (i, n) => rowDelay(i, n) },
     slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
     focus:      { grid: focusV,        card: null,           delay: () => 0 },
     railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
     push:       { grid: pushV,         card: cardV,          delay: (i, n) => rowDelay(i, n) },
-    deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n),           delay: () => 0 },
+    deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n), liftFor: (i, n) => dealLiftV(i, n), delay: () => 0 },
     ribbon:     { grid: holdV,         cardFor: (i, n) => ribbonV(i, n),         delay: () => 0 },
     flip:       { grid: holdV,         cardFor: (i) => flipV(i),                 delay: () => 0 },
     toss:       { grid: holdV,         cardFor: (i, n) => tossV(i, n),           delay: () => 0 },
@@ -585,7 +669,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -628,7 +712,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const notchH = useTransform([edgeA, edgeB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
 
   return (
-    <div className="mp-frame">
+    <div className="mp-frame" ref={frameRef}>
       {/* rail */}
       <LayoutGroup>
       <nav className="mp-rail" role="tablist">
@@ -750,12 +834,13 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
               <motion.div key={col.id} className="mp-grid" custom={dir}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
-                style={(style === 'slideDepth' || style === 'push') ? { transformOrigin: `50% ${stageMid}px` }
+                style={(style === 'slideDepth' || style === 'push' || style === 'parallax') ? { transformOrigin: `50% ${stageMid}px` }
                      : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> (unfurl && per.cardFor) ? (
                   <motion.div key={i} className="mp-cell" variants={per.cardFor(i, col.items.length)}
                     style={{ position:'relative', zIndex: col.items.length - i }}>
+                    {per.liftFor && <motion.div className="mp-lift" aria-hidden="true" variants={per.liftFor(i, col.items.length)} />}
                     <CardInner p={PRODUCTS[key]} />
                   </motion.div>
                 ) : (unfurl && per.card) ? (

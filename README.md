@@ -16,17 +16,18 @@ a specific version.
 | | Version | What moves | Feel |
 | --- | --- | --- | --- |
 | V1 | **Unfurl** | Vertical travel only. The grid slides 44px along the rail's direction and each row adds 20px of its own, staggered 55ms so the leading row settles first. No scale. | Content arriving along the rail |
-| V2 | **Depth** | Depth at section level. The whole outgoing grid shrinks to 0.95 and fades as one piece; the whole incoming grid rises from 0.90 to full size, sharpening out of a slight blur. Both scale toward the middle of the panel. | The next section coming up to meet you |
-| V3 | **Focus Pull** | Nothing moves or scales. The old grid blurs out; the new one fades in quickly (180ms) but keeps sharpening from a 10px blur for 400ms, so you see focus resolving rather than a crossfade. | A camera pulling focus |
+| V2 | **Deal** | The old cards gather into a neat stack on the first slot (critically damped, 0.32s), then the new ones are dealt out of it one by one (0.42s spring, faint settle). Cards cast a soft shadow while in the air. | Cards handled on a table |
+| V3 | **Parallax** | V1's unfurl plus depth. The incoming section rises 72px and scales up from 0.93 to full size while its rows unfurl; the outgoing section recedes at half the speed, shrinking to 0.94 and fading. | The next section coming up to meet you |
 | V4 | **Rail-anchored Bloom** | The new grid grows 0.97 → 1 from its left edge at the height of the folder you clicked, and the cards fade in as a diagonal wave spreading out from that point. | The collection opening out of its folder |
 
 V2, V3 and V4 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would
-collide otherwise.
+collide otherwise. V2's grid always fits, so it never clips or fades at the
+edges.
 
 Common to all four:
 - **Live link:** https://wishlist-web-ivory.vercel.app — every push to `main` redeploys it.
-- **Scroll switches collections.** Scroll past the end of the grid to move to the next folder, back past the top for the previous one. The grid stretches with a rubber band before switching; V1 and V2 also carry your scroll speed into the transition.
+- **Scroll switches collections**, anywhere over the panel (rail included). One flick is one switch; a second flick — even while the first one's trackpad momentum is still running — or a flick back the other way is read straight away. The grid stretches with a rubber band before switching; V1 and V3 also carry your scroll speed into the transition.
 - **The blue marker stretches, then contracts.** Its leading end races to the new folder so it spans both rows; its trailing end catches up as the switch settles, shrinking it back to size.
 - **Hovering a folder opens its card stack** slightly.
 - `prefers-reduced-motion` is respected throughout — gentler, not removed.

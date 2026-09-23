@@ -264,8 +264,8 @@
 <nav class="proto-picker" aria-label="Transition">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
   <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
-  <button class="proto-picker-item">V2 · Depth</button>
-  <button class="proto-picker-item">V3 · Focus</button>
+  <button class="proto-picker-item">V2 · Deal</button>
+  <button class="proto-picker-item">V3 · Parallax</button>
   <button class="proto-picker-item">V4 · Bloom</button>
 </nav>
 
@@ -288,11 +288,11 @@
   // The panel defaults to the harness's asset path, which is two levels down.
   mod.setAssetBase('assets/images/');
 
-  // Four transitions behind the picker. V1 moves in Y (unfurl), V2 scales the
-  // whole section (depth), V3 pulls focus (blur, no movement), V4 blooms out of
-  // the clicked folder's height (rail-anchored bloom). The five-variant exploration still lives in
-  // saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'slideDepth', 'focus', 'railBloom'];
+  // Four transitions behind the picker. V1 unfurls in Y, V2 deals the cards
+  // out of a stack, V3 is V1 with whole-section parallax scale, V4 is the open
+  // slot for a signature transition. The wider exploration lives in lab.html
+  // and saved-items-rn/prototypes/motion.
+  const STYLES = ['slide', 'deal', 'parallax', 'railBloom'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
