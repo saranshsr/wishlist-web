@@ -459,6 +459,74 @@ function ChainTrack({ active, reduce, launch, onSettle }) {
 }
 /* ==== end V4 / V5 ==== */
 
+/* ==== V7 · Word Morph ====
+   The heading morphs letter by letter (Family's "Continue" → "Confirm"): the
+   letters the two names share — longest common subsequence, in order — slide
+   to their new places on one spring; the rest dissolve out upward and resolve
+   in from below, blurred to sharp. The grid does the same at card scale:
+   a card showing the same product photo in both collections glides to its
+   new slot (layout animation) and keeps living; the others dissolve out and
+   resolve in where they stand. Heading and cards share the spring. */
+const MORPH_SPRING = { type:'spring', visualDuration:0.5, bounce:0.12 };
+let morphUid = 0;
+const lcsPairs = (a, b) => {
+  const n = a.length, m = b.length, L = Array.from({ length: n + 1 }, () => new Int16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const pairs = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (a[i] === b[j]) { pairs.push([i, j]); i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) i++; else j++; }
+  return pairs;
+};
+let measureCtx = null;
+const glyphXs = (text, font) => {
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d');
+  measureCtx.font = font; measureCtx.letterSpacing = '-0.25px';
+  return [...text].map((_, i) => measureCtx.measureText(text.slice(0, i)).width);
+};
+function TitleMorph({ name, reduce }) {
+  const reg = React.useRef(null);
+  const h1 = React.useRef(null);
+  const [font, setFont] = React.useState('700 22px Noontree, sans-serif');
+  React.useLayoutEffect(() => {
+    if (h1.current) { const cs = getComputedStyle(h1.current); setFont(`${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`); }
+    document.fonts?.ready?.then(() => setFont((f) => f + ' '));   // re-measure once the webfont is in
+  }, []);
+  const letters = React.useMemo(() => {
+    const chars = [...name];
+    const prev = reg.current;
+    const next = chars.map((ch) => ({ ch, key: null }));
+    if (prev) {
+      const A = prev.filter((l) => l.ch !== ' '), Bi = chars.map((c, i) => i).filter((i) => chars[i] !== ' ');
+      lcsPairs(A.map((l) => l.ch), Bi.map((i) => chars[i])).forEach(([ai, bj]) => { next[Bi[bj]].key = A[ai].key; });
+    }
+    next.forEach((l) => { if (!l.key) l.key = 'g' + (++morphUid); });
+    reg.current = next;
+    return next;
+  }, [name]);
+  const xs = React.useMemo(() => glyphXs(name, font.trim()), [name, font]);
+  const t = reduce ? { duration: 0 } : MORPH_SPRING;
+  return (
+    <h1 ref={h1} className="mp-title mp-title-morph" aria-label={name}>
+      <AnimatePresence initial={false}>
+        {letters.map((l, i) => l.ch === ' ' ? null : (
+          <motion.span key={l.key} className="mp-morph-ch" aria-hidden="true" onUpdate={JS_DRIVEN}
+            initial={{ x: xs[i], y: reduce ? 0 : 7, opacity: 0, filter: reduce ? 'blur(0px)' : 'blur(6px)' }}
+            animate={{ x: xs[i], y: 0, opacity: 1, filter: 'blur(0px)' }}
+            exit={{ y: reduce ? 0 : -7, opacity: 0, filter: reduce ? 'blur(0px)' : 'blur(6px)', transition: { duration: 0.2, ease: EASE_OUT } }}
+            transition={{ x: t, y: t, opacity: { duration: 0.24, ease: EASE_OUT, delay: 0.06 }, filter: { duration: 0.32, ease: EASE_OUT, delay: 0.06 } }}>
+            {l.ch}
+          </motion.span>
+        ))}
+      </AnimatePresence>
+      <span className="mp-morph-sizer" aria-hidden="true">{name}</span>
+    </h1>
+  );
+}
+/* A card's identity across collections is its photo (and which occurrence of
+   it), so Sneakers' shoe — same photo as the Nautica card — morphs too. */
+const morphIds = (items) => { const seen = {}; return items.map((k) => { const im = PRODUCTS[k].img; seen[im] = (seen[im] || 0) + 1; return `${im}#${seen[im]}`; }); };
+/* ==== end V7 ==== */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -679,7 +747,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
     // one, and it is short so the band can't outlive the movement.
-    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain') ? 950 : 340);
+    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain') ? 950 : style === 'wordmorph' ? 620 : 340);
     return () => clearTimeout(t);
   }, [active]);
 
@@ -1117,7 +1185,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     return (dir > 0 ? row : rows - 1 - row) * ROW_STAGGER;
   };
 
-  const isSharedGrid = style === 'morph' || style === 'bloom' || style === 'glide';
+  const isSharedGrid = style === 'morph' || style === 'bloom' || style === 'glide' || style === 'wordmorph';
   /* Per-style grid + card choreography for the staggered family. */
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
@@ -1231,6 +1299,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             {/* Always popLayout: the blur morph needs the old and new names
                 overlapping in one spot, in every version — under "wait" V1
                 showed an empty heading between them. */}
+            {style === 'wordmorph' ? <TitleMorph name={col.name} reduce={reduce} /> : (
             <AnimatePresence mode="popLayout" initial={false} custom={dir}>
               {style === 'deal' ? (
                 /* V2 · Deal has no blur anywhere, so its heading doesn't
@@ -1251,6 +1320,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                   variants={titleV} initial="enter" animate="center" exit="exit" onUpdate={JS_DRIVEN}>{col.name}</motion.h1>
               )}
             </AnimatePresence>
+            )}
           </div>
           {/* mode toggle — motion-lab. Harness only. */}
           {chrome && (
@@ -1290,8 +1360,22 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           <StackDeck active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : isSharedGrid ? (
           <div className="mp-grid">
-            <AnimatePresence mode={style === 'glide' ? 'popLayout' : mode} custom={dir} initial={false}>
-              {col.items.map((key,i)=>{
+            <AnimatePresence mode={(style === 'glide' || style === 'wordmorph') ? 'popLayout' : mode} custom={dir} initial={false}>
+              {style === 'wordmorph' ? morphIds(col.items).map((id, i) => {
+                /* V7 · Word Morph — same photo, same element: it glides to its
+                   new slot; everything else dissolves out / resolves in. */
+                const key = col.items[i];
+                return (
+                  <motion.div key={id} className="mp-cell" layout onUpdate={JS_DRIVEN}
+                    initial={{ opacity:0, scale: reduce ? 1 : 0.94, filter: reduce ? 'blur(0px)' : 'blur(6px)' }}
+                    animate={{ opacity:1, scale:1, filter:'blur(0px)' }}
+                    exit={{ opacity:0, scale: reduce ? 1 : 0.94, filter: reduce ? 'blur(0px)' : 'blur(6px)', transition:{ duration:0.2, ease:EASE_OUT } }}
+                    transition={{ layout: reduce ? { duration:0 } : MORPH_SPRING, scale:{ ...MORPH_SPRING, delay:0.06 },
+                      opacity:{ duration:0.24, ease:EASE_OUT, delay:0.06 }, filter:{ duration:0.32, ease:EASE_OUT, delay:0.06 } }}>
+                    <CardInner p={PRODUCTS[key]} />
+                  </motion.div>
+                );
+              }) : col.items.map((key,i)=>{
                 const [cx,cy]=cardCentre(i);
                 if (style==='morph') {
                   const old = fromMap.get(key);

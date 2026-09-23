@@ -268,3 +268,9 @@ html[data-edge-off] .mp-edge{display:none}
 .mp-doc-title{margin:0 0 20px;height:32px}
 /* The liquid tab: one SVG shape, same white and inverted corners as .mp-sel. */
 .mp-liquid{position:absolute;left:0;top:-20px;z-index:1;pointer-events:none;overflow:visible}
+
+/* V7 · Word Morph heading: letters are absolutely placed at measured x; an
+   invisible copy of the name sizes the line. */
+.mp-title-morph{position:relative}
+.mp-morph-ch{position:absolute;left:0;top:0;white-space:pre}
+.mp-morph-sizer{visibility:hidden}
