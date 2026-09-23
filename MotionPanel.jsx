@@ -153,8 +153,12 @@ function CarouselTrack({ active, reduce, onSettle }) {
     if (reduce) { y.set(-TRACK_OFFS[active]); onSettle(); return; }
     // Tween from wherever the strip is right now, so an interruption is a
     // retarget, not a restart.
-    const a = animate(y, -TRACK_OFFS[active], { ...TRACK_EASE, onComplete: onSettle });
-    return () => a.stop();
+    const a = animate(y, -TRACK_OFFS[active], TRACK_EASE);
+    // Release the edge fade while the strip is still gliding in (it's ~95%
+    // there at 0.58s), so the fade dissolves as the cards settle instead of
+    // waiting for the curve's last pixels and vanishing after.
+    const t = setTimeout(onSettle, 480);
+    return () => { a.stop(); clearTimeout(t); };
   }, [active]);
   return (
     <motion.div className="mp-track" style={{ y, height: sectionH(COLLECTIONS[active].items.length) }}>
@@ -449,6 +453,18 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     enter:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)' },
     center:{ opacity:1, filter:'blur(0px)', transition:{ opacity:{ duration:0.3, ease:EASE_OUT }, filter:{ duration:0.42, ease:EASE_OUT } } },
     exit:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)', transition:{ opacity:{ duration:0.26, ease:EASE_OUT }, filter:{ duration:0.3, ease:EASE_OUT } } },
+  };
+  const dealTitleV = {
+    enter:{ opacity:1 }, center:{ opacity:1 },
+    exit:{ opacity:0, transition:{ duration:0.14, ease:EASE_OUT } },
+  };
+  const dealCharV = (i) => reduce ? {
+    enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2, delay: 0.04 } },
+  } : {
+    enter:{ opacity:0, y:-6, rotate:-5 },
+    center:{ opacity:1, y:0, rotate:0, transition:{
+      default:{ type:'spring', visualDuration:0.3, bounce:0.15, delay: 0.04 + i * 0.011 },
+      opacity:{ duration:0.12, ease:EASE_OUT, delay: 0.04 + i * 0.011 } } },
   };
 
 
@@ -822,8 +838,24 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                 overlapping in one spot, in every version — under "wait" V1
                 showed an empty heading between them. */}
             <AnimatePresence mode="popLayout" initial={false} custom={dir}>
-              <motion.h1 key={col.id} className="mp-title" custom={dir}
-                variants={titleV} initial="enter" animate="center" exit="exit">{col.name}</motion.h1>
+              {style === 'deal' ? (
+                /* V2 · Deal has no blur anywhere, so its heading doesn't
+                   blur-morph: the new name is dealt in letter by letter, each
+                   letter landing from a few px up with a small turn — the
+                   cards' own gesture, at type size — while the old name simply
+                   fades. Letters are aria-hidden; the h1 carries the name. */
+                <motion.h1 key={col.id} className="mp-title" aria-label={col.name}
+                  variants={dealTitleV} initial="enter" animate="center" exit="exit">
+                  {[...col.name].map((ch, i) => (
+                    <motion.span key={i} className="mp-title-ch" aria-hidden="true" variants={dealCharV(i)}>
+                      {ch === ' ' ? '\u00a0' : ch}
+                    </motion.span>
+                  ))}
+                </motion.h1>
+              ) : (
+                <motion.h1 key={col.id} className="mp-title" custom={dir}
+                  variants={titleV} initial="enter" animate="center" exit="exit">{col.name}</motion.h1>
+              )}
             </AnimatePresence>
           </div>
           {/* mode toggle — motion-lab. Harness only. */}

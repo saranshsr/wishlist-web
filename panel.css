@@ -114,9 +114,11 @@
   --ft:max(var(--fade-top),var(--fade-move),var(--fade-pull));
   --fb:max(var(--fade-bot),var(--fade-move),var(--fade-pull));
   /* Asymmetric on purpose: it has to be there the instant the grid starts
-     moving, and gone the instant it stops. A slow release left a blur band
-     hanging over settled content for the better part of a second. */
-  transition:--fade-move 130ms cubic-bezier(.23,1,.32,1)}
+     moving, and it dissolves as the cards settle. The release was 130ms and
+     read as the fade switching off (Saransh, 23 Sep); 480ms on the in-out
+     curve fades it away with the last of the movement. It stays short enough
+     not to hang over settled content — the band is only 14px. */
+  transition:--fade-move 480ms cubic-bezier(.77,0,.175,1)}
 .mp-stage-wrap[data-moving]{--fade-move:14px;transition:--fade-move 60ms linear}
 
 /* The stage is the scroll container: content scrolls normally, and only an
@@ -155,7 +157,7 @@
    the release attribute adds one for the spring back. */
 .mp-presence{min-height:100%;transform:translateY(var(--rubber,0px))}
 .mp-stage-wrap[data-release] .mp-presence{transition:transform 280ms cubic-bezier(.23,1,.32,1)}
-.mp-stage-wrap[data-release]{transition:--fade-move 130ms cubic-bezier(.23,1,.32,1),--fade-pull 240ms cubic-bezier(.23,1,.32,1)}
+.mp-stage-wrap[data-release]{transition:--fade-move 480ms cubic-bezier(.77,0,.175,1),--fade-pull 360ms cubic-bezier(.77,0,.175,1)}
 @media (prefers-reduced-motion: reduce){ .mp-presence{transform:none} }
 .mp-grid-wrap{position:relative;flex:1}
 /* popLayout sets position:absolute on the exiting child itself — don't fight it */
@@ -225,3 +227,6 @@
 .mp-stage-wrap[data-track] .mp-stage{overflow:hidden}
 .mp-track{position:relative}
 .mp-track-sec{position:absolute;left:0;right:0;transform-origin:0% 50%}
+
+/* V2 · Deal heading — letters are dealt in one by one (see dealCharV). */
+.mp-title-ch{display:inline-block;transform-origin:50% 100%}
