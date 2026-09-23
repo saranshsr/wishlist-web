@@ -258,3 +258,13 @@ html[data-edge-off] .mp-edge{display:none}
 /* Shade over a sheet in the pile, same footprint as its paper. */
 .mp-stack-veil{position:absolute;inset:-12px -12px -16px;border-radius:24px;background:#101628;pointer-events:none}
 /* ---- VARIANT A CSS ---- */
+
+/* V4 · Liquid Tab / V5 · Spring Chain — the page as one document: every
+   chapter carries its own heading, so the panel header steps aside and the
+   stage starts at the top padding. */
+.mp-content[data-doc] .mp-header{display:none}
+.mp-doc{position:relative}
+.mp-doc-link{position:absolute;left:0;right:0}
+.mp-doc-title{margin:0 0 20px;height:32px}
+/* The liquid tab: one SVG shape, same white and inverted corners as .mp-sel. */
+.mp-liquid{position:absolute;left:0;top:-20px;z-index:1;pointer-events:none;overflow:visible}

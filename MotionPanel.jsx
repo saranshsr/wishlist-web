@@ -13,7 +13,7 @@
  * Bar: Emil + Apple — transform/opacity/filter only, springs, reduced-motion.
  */
 import React, { useState } from 'react';
-import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useMotionValue, useTransform, animate } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useMotionValue, useTransform, animate, motionValue } from 'framer-motion';
 
 /* Where the product imagery lives, relative to the HOST page — the harness sits
    two levels down from assets/, the shipped page sits beside it. */
@@ -271,6 +271,194 @@ function StackDeck({ active, reduce, launch, onSettle }) {
 }
 /* ---- VARIANT A END ---- */
 
+/* ==== V4 · Liquid Tab and V5 · Spring Chain: the page as one document ====
+   Both lay every collection out as a chapter of one tall document — its own
+   heading, then its rows — so the heading travels WITH its cards instead of
+   cross-fading on its own (the panel's header is hidden for these styles).
+   Only displacement is animated; each chapter fades by its distance from the
+   stage top the way V3's sections do, so neighbours never sit half-visible. */
+const DOC_HEAD = 52;                       // 32px heading + 20px to the grid
+const DOC_GAP = 48;                        // between chapters
+const docH = (k) => DOC_HEAD + sectionH(COLLECTIONS[k].items.length);
+const DOC_OFFS = (() => { let o = 0; return COLLECTIONS.map((c, k) => { const at = o; o += docH(k) + DOC_GAP; return at; }); })();
+const docRows = (k) => Math.max(1, Math.ceil(COLLECTIONS[k].items.length / COLS));
+// A chapter one pitch away is fully faded; fully visible for the first 40%.
+const docOpacity = (k, top) => {
+  // Below its place: the pitch to the chapter above. Above it — or the first
+  // chapter overshooting downward, which has nothing above — its own pitch.
+  const pitch = top > 0 && k > 0 ? DOC_OFFS[k] - DOC_OFFS[k - 1] : docH(k) + DOC_GAP;
+  const p = Math.min(1, Math.abs(top) / pitch);
+  return Math.max(0, Math.min(1, 1 - (p - 0.4) / 0.6));
+};
+function DocHeading({ c }) { return <h2 className="mp-title mp-doc-title">{c.name}</h2>; }
+function DocRow({ c, r }) {
+  return (
+    <div className="mp-grid">
+      {c.items.slice(r * COLS, r * COLS + COLS).map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
+    </div>
+  );
+}
+
+/* ---- V4 · Liquid Tab ----
+   The selected tab and its page are one white body. The tab is drawn as a
+   single SVG shape from two ends on two springs: the lead races to the new
+   row, the trail follows with a little give, so while they're apart the white
+   stretches between the rows and pinches into a neck that stays joined to the
+   page, then snaps together. The page is driven by the SAME two springs: the
+   chapter you're leaving goes with the lead (it's pulled away first), the one
+   you're arriving at comes with the trail (it's drawn in behind), so the page
+   opens a gap exactly while the tab is stretched and closes it as the tab
+   snaps shut — one body, one motion. */
+const LIQ_LEAD  = { type:'spring', stiffness:560, damping:46 };   // ζ ≈ 0.97, races ahead
+const LIQ_TRAIL = { type:'spring', stiffness:170, damping:23 };   // ζ ≈ 0.88, the give (≈6px settle)
+const LIQ_R = 20;                                                 // the inverted corners
+/* The tab outline for ends a/b (row indices). At rest it is exactly .mp-sel —
+   a 280×96 row with the two inverted corners into the page. Stretched, each
+   end keeps a 36px cap with its outer left corner rounding off, and the
+   left edge between the caps pinches in: a neck up to 150px deep, always
+   joined to the page on the right. */
+function liquidPath(a, b) {
+  const T = Math.min(a, b) * RAIL_ROW_H, B = Math.max(a, b) * RAIL_ROW_H + RAIL_ROW_H;
+  const s = Math.max(0, (B - T - RAIL_ROW_H) / RAIL_ROW_H);       // 0 at rest, 1 per row apart
+  const r = Math.min(16, 48 * s), w = Math.min(150, 190 * Math.sqrt(s));
+  const cap = 36, y1 = T + cap, y2 = B - cap, m = (T + B) / 2;
+  const f = (n) => n.toFixed(2);
+  const left = s < 0.002 ? `L0,${f(T)} L0,${f(B)}` :
+    `L${f(r)},${f(T)} Q0,${f(T)} 0,${f(T + r)} L0,${f(y1)} ` +
+    `C0,${f(y1 + (m - y1) * 0.6)} ${f(w)},${f(m - (m - y1) * 0.4)} ${f(w)},${f(m)} ` +
+    `C${f(w)},${f(m + (y2 - m) * 0.4)} 0,${f(y2 - (y2 - m) * 0.6)} 0,${f(y2)} ` +
+    `L0,${f(B - r)} Q0,${f(B)} ${f(r)},${f(B)}`;
+  return `M280,${f(T - LIQ_R)} A${LIQ_R},${LIQ_R} 0 0 1 ${280 - LIQ_R},${f(T)} ${left} ` +
+         `L${280 - LIQ_R},${f(B)} A${LIQ_R},${LIQ_R} 0 0 1 280,${f(B + LIQ_R)} Z`;
+}
+/* The blue marker stays the usual stretching bar on top (same two ends, same
+   springs). Clipping it to the shape was tried: the neck swallowed almost all
+   of it and it read as broken specks. */
+function LiquidTab({ a, b }) {
+  const d = useTransform([a, b], ([x, y]) => liquidPath(x, y));
+  const h = COLLECTIONS.length * RAIL_ROW_H + 2 * LIQ_R;
+  return (
+    <svg className="mp-liquid" aria-hidden="true" width="280" height={h} viewBox={`0 ${-LIQ_R} 280 ${h}`}>
+      <motion.path d={d} fill="#fff" />
+    </svg>
+  );
+}
+function LiquidSection({ k, c, y, on }) {
+  const opacity = useTransform(y, (v) => docOpacity(k, DOC_OFFS[k] + v));
+  return (
+    <motion.div className="mp-doc-link" aria-hidden={!on}
+      style={{ top: DOC_OFFS[k], y, opacity, pointerEvents: on ? 'auto' : 'none' }}>
+      <DocHeading c={c} />
+      {Array.from({ length: docRows(k) }, (_, r) => <div key={r} style={{ marginTop: r ? GAP : 0 }}><DocRow c={c} r={r} /></div>)}
+    </motion.div>
+  );
+}
+function LiquidTrack({ active, reduce, launch, onSettle }) {
+  const ys = React.useMemo(() => COLLECTIONS.map(() => motionValue(-DOC_OFFS[active])), []);
+  const from = React.useRef(active);
+  React.useEffect(() => {
+    const T = -DOC_OFFS[active], dir = Math.sign(active - from.current);
+    from.current = active;
+    if (reduce || !dir) { ys.forEach((y) => y.set(T)); onSettle(); return; }
+    const v = launch.current?.v;
+    // Chapters on the side you're leaving ride the lead; the target and what's
+    // beyond it ride the trail. Decided per switch from where they are now,
+    // so a reversal mid-flight re-assigns without a jump.
+    const anims = ys.map((y, k) => animate(y, T, {
+      ...((k - active) * dir < 0 ? LIQ_LEAD : LIQ_TRAIL), ...(v ? { velocity: v } : null) }));
+    const t = setTimeout(onSettle, 520);
+    return () => { anims.forEach((x) => x.stop()); clearTimeout(t); };
+  }, [active]);
+  return (
+    <div className="mp-doc" style={{ height: docH(active) }}>
+      {COLLECTIONS.map((c, k) => <LiquidSection key={c.id} k={k} c={c} y={ys[k]} on={k === active} />)}
+    </div>
+  );
+}
+
+/* ---- V5 · Spring Chain ----
+   Every heading and every row is a link in one chain, pulled from the front
+   link of the chapter you're leaving (its heading going down the rail, its
+   last row going up) on a firm, nearly critically damped spring. Each link
+   behind it hangs back in proportion to the chain's speed — the further down
+   the chain, the more slack — up to a fixed limit per link, and that slack is
+   itself a slightly under-damped spring. So the page sets off as one body
+   whose gaps open as it gathers speed, then, as it brakes, the slack
+   overshoots and the links gently bunch up before settling: stretch, then
+   compress, like a real chain. Slack is capped (28px a link) and the bunching
+   stays well inside the 20px gaps, so links can never cross — an unbounded
+   spring chain let them trail by hundreds of px on a 1000px trip.
+   Simulated per frame (4 sub-steps); a new switch moves the pull point and
+   target, and positions and velocities carry on. */
+const CHAIN_PULL  = { k: 260, c: 30 };     // the pull: ζ ≈ 0.93
+const CHAIN_SLACK = { k: 300, c: 12 };     // the slack: ζ ≈ 0.35, the follow-through
+const CHAIN_TAU = 0.009;                   // s of lag per link behind the pull
+const CHAIN_MAX = 28;                      // px of slack per link, at most
+const CHAIN_LINKS = COLLECTIONS.flatMap((c, k) => [
+  { k, head: true, top: DOC_OFFS[k] },
+  ...Array.from({ length: docRows(k) }, (_, r) => ({ k, r, top: DOC_OFFS[k] + DOC_HEAD + r * ROW_PITCH })),
+]);
+const CHAIN_HEAD_OF = COLLECTIONS.map((c, k) => CHAIN_LINKS.findIndex((l) => l.k === k && l.head));
+function ChainLink({ link, c, y, headY, on }) {
+  const opacity = useTransform(headY, (v) => docOpacity(link.k, DOC_OFFS[link.k] + v));
+  return (
+    <motion.div className="mp-doc-link" aria-hidden={!on}
+      style={{ top: link.top, y, opacity, pointerEvents: on ? 'auto' : 'none' }}>
+      {link.head ? <DocHeading c={c} /> : <DocRow c={c} r={link.r} />}
+    </motion.div>
+  );
+}
+function ChainTrack({ active, reduce, launch, onSettle }) {
+  const n = CHAIN_LINKS.length;
+  const ys = React.useMemo(() => CHAIN_LINKS.map(() => motionValue(-DOC_OFFS[active])), []);
+  const sim = React.useRef(null);
+  if (!sim.current) sim.current = { x: -DOC_OFFS[active], v: 0, lag: Array(n).fill(0), lv: Array(n).fill(0),
+    rank: Array(n).fill(0), T: -DOC_OFFS[active], raf: 0, last: 0, from: active };
+  React.useEffect(() => {
+    const st = sim.current, dir = Math.sign(active - st.from);
+    st.T = -DOC_OFFS[active];
+    const commit = () => ys.forEach((y, i) => y.set(st.x + st.lag[i]));
+    if (reduce || !dir) { st.x = st.T; st.v = 0; st.lag.fill(0); st.lv.fill(0); commit(); st.from = active; onSettle(); return; }
+    const own = CHAIN_LINKS.map((l, i) => i).filter((i) => CHAIN_LINKS[i].k === st.from);
+    const P = dir > 0 ? own[0] : own[own.length - 1];
+    st.from = active;
+    // Links behind the pull (in the direction of travel) carry slack, one
+    // more link's worth each; links ahead of it ride rigidly.
+    st.rank = CHAIN_LINKS.map((_, i) => Math.max(0, (i - P) * dir));
+    const v0 = launch.current?.v;
+    if (v0) st.v += v0;
+    const tick = (now) => {
+      const dt = Math.min(1 / 30, (now - (st.last || now)) / 1000); st.last = now;
+      const h = dt / 4;
+      for (let s = 0; s < 4; s++) {
+        st.v += (CHAIN_PULL.k * (st.T - st.x) - CHAIN_PULL.c * st.v) * h;
+        st.x += st.v * h;
+        for (let i = 0; i < n; i++) {
+          const r = st.rank[i];
+          const want = r ? -Math.max(-CHAIN_MAX * r, Math.min(CHAIN_MAX * r, st.v * CHAIN_TAU * r)) : 0;
+          st.lv[i] += (CHAIN_SLACK.k * (want - st.lag[i]) - CHAIN_SLACK.c * st.lv[i]) * h;
+          st.lag[i] += st.lv[i] * h;
+        }
+      }
+      let busy = Math.abs(st.x - st.T) > 0.3 || Math.abs(st.v) > 4;
+      for (let i = 0; i < n && !busy; i++) if (Math.abs(st.lag[i]) > 0.3 || Math.abs(st.lv[i]) > 4) busy = true;
+      if (!busy) { st.x = st.T; st.v = 0; st.lag.fill(0); st.lv.fill(0); }
+      commit();
+      st.raf = busy ? requestAnimationFrame(tick) : 0;
+    };
+    cancelAnimationFrame(st.raf); st.last = 0; st.raf = requestAnimationFrame(tick);
+    const t = setTimeout(onSettle, 560);
+    return () => clearTimeout(t);
+  }, [active]);
+  React.useEffect(() => () => cancelAnimationFrame(sim.current.raf), []);
+  return (
+    <div className="mp-doc" style={{ height: docH(active) }}>
+      {CHAIN_LINKS.map((l, i) => <ChainLink key={i} link={l} c={COLLECTIONS[l.k]} y={ys[i]} headY={ys[CHAIN_HEAD_OF[l.k]]} on={l.k === active} />)}
+    </div>
+  );
+}
+/* ==== end V4 / V5 ==== */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -491,7 +679,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
     // one, and it is short so the band can't outlive the movement.
-    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack') ? 950 : 340);
+    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain') ? 950 : 340);
     return () => clearTimeout(t);
   }, [active]);
 
@@ -993,8 +1181,10 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const edgeA = useMotionValue(0), edgeB = useMotionValue(0);
   React.useEffect(() => {
     if (reduce) { edgeA.set(active); edgeB.set(active); return; }
-    const a = animate(edgeA, active, NOTCH_LEAD);
-    const b = animate(edgeB, active, NOTCH_TRAIL);
+    // V4 · Liquid Tab draws the white tab itself from these two ends, on the
+    // same springs that drive its page.
+    const a = animate(edgeA, active, style === 'liquid' ? LIQ_LEAD : NOTCH_LEAD);
+    const b = animate(edgeB, active, style === 'liquid' ? LIQ_TRAIL : NOTCH_TRAIL);
     return () => { a.stop(); b.stop(); };
   }, [active]);
   const notchY = useTransform([edgeA, edgeB], ([a, b]) => `translateY(${(Math.min(a, b) * RAIL_ROW_H + NOTCH_TOP).toFixed(2)}px)`);
@@ -1014,7 +1204,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             two inverted corners that tie it into the content area. It travels on
             the grid's spring so the rail and the cards read as one gesture.
             Full transform string — the x/y shorthands aren't accelerated. */}
-        <motion.span className="mp-sel" aria-hidden style={{ transform: railTransform }}>
+        {style === 'liquid' && <LiquidTab a={edgeA} b={edgeB} />}
+        <motion.span className="mp-sel" aria-hidden style={{ transform: railTransform, display: style === 'liquid' ? 'none' : undefined }}>
           <img className="mp-sel-corner mp-sel-corner-top" src={IMG('37a34.svg')} alt="" />
           <img className="mp-sel-corner mp-sel-corner-bot" src={IMG('37a34.svg')} alt="" />
         </motion.span>
@@ -1034,7 +1225,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       </nav>
 
       {/* content */}
-      <div className="mp-content">
+      <div className="mp-content" data-doc={(style === 'liquid' || style === 'chain') ? '' : undefined}>
         <div className="mp-header">
           <div className="mp-title-wrap">
             {/* Always popLayout: the blur morph needs the old and new names
@@ -1085,11 +1276,15 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             exit and froze mode="wait" entirely. */}
         <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}
           data-sig={style === 'signature' ? '' : undefined}
-          data-track={(style === 'carousel' || style === 'stack') ? '' : undefined}
+          data-track={(style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain') ? '' : undefined}
           data-stack={style === 'stack' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {style === 'carousel' ? (
+        {style === 'liquid' ? (
+          <LiquidTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
+        ) : style === 'chain' ? (
+          <ChainTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
+        ) : style === 'carousel' ? (
           <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} />
         ) : style === 'stack' ? (
           <StackDeck active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
