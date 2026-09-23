@@ -1216,7 +1216,8 @@ function SilhouetteMorph({ active, reduce, onSettle }) {
 // V3's curve, cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s — soft start, long glide.
 const DEPTH_EASE = { duration: 0.9, ease: [0.3, 0.05, 0.05, 1] };
 const DEPTH_FLICK = DEPTH_EASE;
-const DEPTH_NEAR = 0.04, DEPTH_FAR = 0.06;
+// "Sell the word": far layer 0.85 (was 0.94); near 1.045 — the most the 20px side padding allows without crossing into the rail
+const DEPTH_NEAR = 0.045, DEPTH_FAR = 0.15;
 function DepthLayer({ k, c, p, role, span }) {
   // role: 'to' (the page arriving), 'from' (the page leaving), or null.
   const scale = useTransform(p, (v) => { const d = k - v, m = Math.min(1, Math.abs(d)); return d < 0 ? 1 + DEPTH_NEAR * m : 1 - DEPTH_FAR * m; });
