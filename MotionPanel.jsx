@@ -461,9 +461,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const dealCharV = (i) => reduce ? {
     enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2, delay: 0.04 } },
   } : {
-    enter:{ opacity:0, y:-6, rotate:-5 },
-    center:{ opacity:1, y:0, rotate:0, transition:{
-      default:{ type:'spring', visualDuration:0.3, bounce:0.15, delay: 0.04 + i * 0.011 },
+    enter:{ opacity:0, y:-5 },
+    center:{ opacity:1, y:0, transition:{
+      default:{ type:'spring', visualDuration:0.3, bounce:0, delay: 0.04 + i * 0.011 },
       opacity:{ duration:0.12, ease:EASE_OUT, delay: 0.04 + i * 0.011 } } },
   };
 
@@ -840,10 +840,10 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             <AnimatePresence mode="popLayout" initial={false} custom={dir}>
               {style === 'deal' ? (
                 /* V2 · Deal has no blur anywhere, so its heading doesn't
-                   blur-morph: the new name is dealt in letter by letter, each
-                   letter landing from a few px up with a small turn — the
-                   cards' own gesture, at type size — while the old name simply
-                   fades. Letters are aria-hidden; the h1 carries the name. */
+                   blur-morph: the new name is dealt in letter by letter, left to
+                   right in the same order the cards are dealt, each letter
+                   settling down from 5px above — no tilt, no bounce — while
+                   the old name simply fades. Letters are aria-hidden; the h1 carries the name. */
                 <motion.h1 key={col.id} className="mp-title" aria-label={col.name}
                   variants={dealTitleV} initial="enter" animate="center" exit="exit">
                   {[...col.name].map((ch, i) => (
