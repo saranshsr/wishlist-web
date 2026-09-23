@@ -1216,8 +1216,10 @@ function SilhouetteMorph({ active, reduce, onSettle }) {
 // V3's curve, cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s — soft start, long glide.
 const DEPTH_EASE = { duration: 0.9, ease: [0.3, 0.05, 0.05, 1] };
 const DEPTH_FLICK = DEPTH_EASE;
-// "Sell the word": far layer 0.85 (was 0.94); near 1.045 — the most the 20px side padding allows without crossing into the rail
-const DEPTH_NEAR = 0.045, DEPTH_FAR = 0.15;
+// Far 0.92 / near 1.045: a touch deeper than the first 0.94 / 1.04 (0.85 was
+// too much travel). Depth is sold by light instead: the near page casts a
+// soft shadow under its cards (--lift, 0 flat → 1 one step toward you).
+const DEPTH_NEAR = 0.045, DEPTH_FAR = 0.08;
 function DepthLayer({ k, c, p, role, span }) {
   // role: 'to' (the page arriving), 'from' (the page leaving), or null.
   const scale = useTransform(p, (v) => { const d = k - v, m = Math.min(1, Math.abs(d)); return d < 0 ? 1 + DEPTH_NEAR * m : 1 - DEPTH_FAR * m; });
@@ -1230,11 +1232,12 @@ function DepthLayer({ k, c, p, role, span }) {
     if (role === 'from') return Math.max(0, Math.min(1, 1 - a / 0.45));
     return a < 0.001 ? 1 : 0;
   });
+  const lift = useTransform(p, (v) => { const d = k - v; return d < 0 ? Math.min(1, -d) : 0; });
   const filter = useTransform(p, (v) => role === 'from' ? `blur(${Math.min(2, Math.abs(k - v) * 5).toFixed(2)}px)` : 'blur(0px)');
   const on = role === 'to' || (role === null && opacity.get() > 0.5);
   return (
     <motion.div className="mp-depth-layer" aria-hidden={role !== 'to'}
-      style={{ scale, opacity, filter, zIndex: role === 'to' ? 2 : 1, pointerEvents: role === 'to' ? 'auto' : 'none' }}>
+      style={{ scale, opacity, filter, '--lift': lift, zIndex: role === 'to' ? 2 : 1, pointerEvents: role === 'to' ? 'auto' : 'none' }}>
       <div className="mp-grid">
         {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
       </div>

@@ -331,3 +331,7 @@ html[data-edge-off] .mp-edge{display:none}
    and never rises into the folder title above it. */
 .mp-depth{position:relative}
 .mp-depth-layer{position:absolute;left:0;right:0;top:0;transform-origin:50% 0;will-change:transform,opacity}
+/* Depth shadow: the page nearest you lifts off the panel. */
+.mp-depth-layer .mp-cell{position:relative;isolation:isolate}
+.mp-depth-layer .mp-cell::after{content:"";position:absolute;inset:0;border-radius:12px;pointer-events:none;z-index:-1;
+  box-shadow:0 22px 44px -16px rgba(16,22,40,.30),0 6px 14px -6px rgba(16,22,40,.10);opacity:var(--lift,0)}
