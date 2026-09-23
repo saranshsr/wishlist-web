@@ -325,14 +325,19 @@ html[data-edge-off] .mp-edge{display:none}
 /* ---- SILHOUETTE CSS ---- */
 
 /* V5 · Depth — every collection stacked in place at its own depth. The stage
-   is open for this style (no edge fade, blur strip or clip — Saransh: cleaner
-   without the band above the cards), so each page scales from its TOP edge:
-   at 1.04 it grows down and sideways (17px a side, inside the 20px padding)
-   and never rises into the folder title above it. */
+   is open for this style (no edge fade, blur strip or clip), and each page
+   carries its own heading (the panel header steps aside, as in V4), so the
+   heading dollies with its cards. Every card scales about one shared
+   vanishing point out by the folders; its transform-origin is set per card
+   from JS. */
 .mp-depth{position:relative}
-.mp-depth-layer{position:absolute;left:0;right:0;top:0;transform-origin:50% 0;will-change:transform,opacity}
-/* Depth shadow: the page nearest you lifts off the panel. */
-.mp-depth-layer .mp-cell{position:relative;isolation:isolate}
+.mp-depth-layer{position:absolute;left:0;right:0;top:0;will-change:opacity,filter}
+.mp-depth-head{width:max-content;will-change:transform}
+.mp-depth-layer .mp-cell{position:relative;isolation:isolate;will-change:transform}
+/* The page nearest you lifts off the panel: a soft shadow under each card. */
 .mp-depth-layer .mp-cell::after{content:"";position:absolute;inset:0;border-radius:12px;pointer-events:none;z-index:-1;
-  box-shadow:0 28px 56px -18px rgba(16,22,40,.42),0 8px 18px -8px rgba(16,22,40,.16);opacity:var(--lift,0)}
-.mp-depth-row{position:absolute;left:0;right:0}
+  box-shadow:0 22px 44px -16px rgba(16,22,40,.30),0 6px 14px -6px rgba(16,22,40,.10);opacity:var(--lift,0)}
+/* Photo in the frame: it sits a layer behind its card and settles a beat later. */
+.mp-depth-layer .mp-photo{transform:scale(calc(1 + var(--zoom,0) * 0.06));transform-origin:50% 45%}
+/* The overscroll moves the camera here, not the content: no rubber band. */
+.mp-stage-wrap[data-depth] .mp-presence{transform:none}

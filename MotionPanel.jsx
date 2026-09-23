@@ -1198,91 +1198,203 @@ function SilhouetteMorph({ active, reduce, onSettle }) {
 }
 /* ---- SILHOUETTE END ---- */
 
-/* ==== V5 · Depth (rebuilt 24 Sep) ====
-   Real depth, tied to where you're going. Every collection sits at the same
-   place at a different depth, and ONE value — p, the fractional collection
-   index — says where the camera is. Going down the rail moves the camera
-   deeper: the page you leave drifts toward you (to 1.04) and fades; the next
-   one emerges from behind (0.94 → 1). Going up is the mirror: the page you
-   leave sinks back, the previous one comes forward to meet you.
-   What the first build got wrong, measured frame by frame: a ~100ms fog where
-   both pages were blurred and half-visible at once; a 3.5% scale that the
-   36px rise overpowered (it read as a blurry V1); a soft spring tail that
-   crept the last 5px until ~580ms; and the same exit whichever way you went.
-   So: the leaving page is gone by ~40% of the trip and is the only one with
-   any blur (≤2px); the arriving page is sharp from its first frame and fully
-   in by ~65%; no vertical travel — the depth is the motion; and one strong
-   ease-out, cubic-bezier(0.23, 1, 0.32, 1) over 0.46s, that decelerates hard
-   and stops clean. Deriving both pages from p means a switch mid-flight
-   just re-aims the camera — nothing can double up or jumble. */
-// Timing matches V3 (Saransh, 24 Sep: 0.46s was too quick to see the depth):
-// V3's curve, cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s — soft start, long glide.
-const DEPTH_EASE = { duration: 0.9, ease: [0.3, 0.05, 0.05, 1] };
-const DEPTH_FLICK = DEPTH_EASE;
-// Far 0.92 / near 1.045: a touch deeper than the first 0.94 / 1.04 (0.85 was
-// too much travel). Depth is sold by light instead: the near page casts a
-// soft shadow under its cards (--lift, 0 flat → 1 one step toward you).
-const DEPTH_NEAR = 0.045, DEPTH_FAR = 0.08;
-/* Depth cues beyond scale (24 Sep: "sell the depth more", without more
-   travel): the page ahead is hazed like distance — a little desaturated and
-   brighter — and clears as it arrives; each row sits at its own depth, the
-   lower row travelling 30% further through it, so the page reads as layers in
-   space; the page nearer than the panel casts a shadow under its cards. */
-const DEPTH_ROW_SPREAD = 0.15;   // kept small: "I do not need much travel of the cards"
-function DepthRow({ c, r, k, p }) {
-  const f = 1 + r * DEPTH_ROW_SPREAD;
-  const scale = useTransform(p, (v) => { const d = k - v, m = Math.min(1, Math.abs(d)) * f; return d < 0 ? 1 + DEPTH_NEAR * m : 1 - DEPTH_FAR * m; });
+/* ==== V5 · Depth (v3, 24 Sep) ====
+   The camera moves through the collections. Every collection sits in the same
+   place at its own depth, and ONE value — v, the fractional collection index
+   the camera is at — places everything. Going down the rail the camera pushes
+   deeper: the page you leave passes you (toward 1.045, a whisper of blur and a
+   shadow while it's nearer than the panel); the next surfaces from behind
+   (0.92 → 1), sharp from its first frame. Up the rail is the mirror.
+
+   What v3 adds over the flat zoom:
+   · Real perspective. Each card scales about ONE vanishing point, out beside
+     the rail by the folders — not about its page's edge — so a page deep in
+     the stack is drawn toward the folder it lives in, and cards at different
+     depths converge on the same point, the way things in a room do.
+   · A depth wave. Cards don't share a depth: the heading and the cards
+     nearest the rail lead, the far column and lower row follow, so a page
+     arrives as a wave running out from the folder you picked. Still a pure
+     function of v, so an interruption just re-aims the camera.
+   · Photo in the frame. Each photo sits a layer behind its card and settles
+     into the frame a beat after it (1.06 → 1): the card reads as a thing with
+     depth of its own.
+   · The heading is part of its page, so it dollies with its cards instead of
+     cross-fading on its own.
+   · Scroll pushes the camera. Overscrolling moves v toward the next
+     collection, so it begins to surface behind the page and the page softens
+     — you feel yourself leaning into it. Let go and it eases back; cross the
+     threshold and the switch carries on from exactly where you are.
+   · A flick is faster: the gesture's speed shortens the trip (0.9 → 0.66s).
+   · Interruption-safe fades. Opacity is re-based on every switch from each
+     page's current opacity, so reversing mid-flight never pops.
+   Timing is V3's: cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s. */
+const DEPTH_CURVE = [0.3, 0.05, 0.05, 1];
+const DEPTH_EASE = { duration: 0.9, ease: DEPTH_CURVE };
+const DEPTH_BACK = [0.2, 0.55, 0.1, 1];          // reversal mid-flight: starts at once, same glide
+const DEPTH_NEAR = 0.045, DEPTH_FAR = 0.08;      // 1.045 toward you, 0.92 behind
+const DEPTH_VP = [-150, 12];                     // vanishing point, layer coords: out by the folders, at the heading
+const DEPTH_WAVE = { col: 0.075, row: 0.12 };    // share of the trip each column / row lags the one before
+const DEPTH_PHOTO = 0.06;                        // photo sits this much deeper than its card
+const DEPTH_GHOST = 0.32;                        // peak opacity of a collection flown through on a jump
+const DEPTH_PULL_MAX = 0.16;                     // how far an overscroll pushes the camera (of one step)
+const DEPTH_PULL_BACK = { duration: 0.42, ease: [0.23, 1, 0.32, 1] };
+const ramp = (x, a, b) => Math.max(0, Math.min(1, (x - a) / (b - a)));
+/* Fade windows, as shares of the trip. Pages: the arriving one fades in over
+   12–50%, the leaving one is gone by 30% — a short overlap, the new page
+   sharp and on top. Headings take turns instead (a name over a name is
+   unreadable): the old one is gone by 24%, the new one reads from 26%. */
+const DEPTH_FADE = { page: { to: [0.12, 0.5], from: [0, 0.3], other: [0, 0.25] },
+                     head: { to: [0.26, 0.5], from: [0.1, 0.24], other: [0, 0.2] } };
+// Opacity of page k when the camera is at x, re-based on the trip: from the
+// opacity it had when the trip began (o0) to its target.
+/* A lean (an overscroll that hasn't switched yet) is gentler: the page you're
+   on only softens, and the next one surfaces to a third behind it. A switch
+   re-bases from whatever the lean left, so the two join without a seam. */
+const DEPTH_LEAN = { page: { to: 0.34, from: 0.14 }, head: { to: 0, from: 0.08 } };
+const tripFade = (T, k, x, ch, o0) => {
+  if (T.lean) {
+    const f = Math.min(1, Math.abs(x - T.start) / DEPTH_PULL_MAX);
+    return k === T.to ? DEPTH_LEAN[ch].to * f : k === T.from ? 1 - DEPTH_LEAN[ch].from * f : 0;
+  }
+  const t = T.span ? Math.abs(x - T.start) / T.span : 1, W = DEPTH_FADE[ch];
+  if (k === T.to) return o0 + (1 - o0) * ramp(t, ...W.to);
+  // Jumping two collections, the camera flies through the one in between: it
+  // passes as a soft ghost, brightest as the camera crosses its plane.
+  if (ch === 'page' && T.span > 1.5 && (k - T.start) * (k - T.to) < 0) {
+    const c = Math.abs(k - T.start) / T.span;          // share of the trip where the camera meets it
+    return Math.max(o0 * (1 - ramp(t, 0, 0.25)), DEPTH_GHOST * Math.max(0, 1 - Math.abs(t - c * 0.72) / 0.16));
+  }
+  return o0 * (1 - ramp(t, ...(k === T.from ? W.from : W.other)));
+};
+const depthCells = (k) => {
+  const n = COLLECTIONS[k].items.length;
+  const cells = [{ head: true, x: 0, y: 0, lag: 0 }];
+  for (let i = 0; i < n; i++) {
+    const col = i % COLS, row = Math.floor(i / COLS);
+    cells.push({ i, x: col * (CARD_W + GAP), y: DOC_HEAD + row * ROW_PITCH, lag: col * DEPTH_WAVE.col + row * DEPTH_WAVE.row });
+  }
+  const max = Math.max(...cells.map((c) => c.lag));
+  return cells.map((c) => ({ ...c, max }));
+};
+const DEPTH_CELLS = COLLECTIONS.map((c, k) => depthCells(k));
+// How far along its own journey (0 in place … 1 a full step away) a cell is,
+// when its page is `a` steps away: the leading cells move first, the last
+// cell moves over the whole trip.
+const cellDepth = (cell, a) => {
+  if (a <= 0) return 0;
+  const u = 1 - Math.min(1, a);
+  return 1 - ramp(u, cell.lag, 1 - cell.max + cell.lag);
+};
+
+function DepthCell({ cell, k, v, reduce, opacity, children }) {
+  // Scale about the shared vanishing point: the origin is the VP expressed in
+  // the cell's own box, so every cell converges on the same spot.
+  const d = useTransform(v, (x) => k - x);                    // + behind, − in front
+  const m = useTransform(d, (x) => cellDepth(cell, Math.abs(x)));
+  const scale = useTransform([d, m], ([x, mm]) => reduce ? 1 : (x < 0 ? 1 + DEPTH_NEAR * mm : 1 - DEPTH_FAR * mm));
+  const lift = useTransform([d, m], ([x, mm]) => (x < 0 ? mm : 0));
+  // The photo trails its card by a beat: it's a layer further back.
+  const zoom = useTransform(d, (x) => reduce ? 0 : cellDepth({ ...cell, lag: Math.min(cell.max, cell.lag + 0.08), max: Math.max(cell.max, cell.lag + 0.08) }, Math.abs(x)));
+  const origin = `${DEPTH_VP[0] - cell.x}px ${DEPTH_VP[1] - cell.y}px`;
   return (
-    <motion.div className="mp-depth-row" style={{ scale, top: r * ROW_PITCH, transformOrigin: `50% ${-r * ROW_PITCH}px` }}>
-      <DocRow c={c} r={r} />
+    <motion.div className={cell.head ? 'mp-depth-head' : 'mp-cell'}
+      style={{ scale, transformOrigin: origin, '--lift': lift, '--zoom': zoom, opacity }}>
+      {children}
     </motion.div>
   );
 }
-function DepthLayer({ k, c, p, role, span }) {
-  // Fades are measured as a share of the whole trip (span), so a jump across
-  // two collections hands over exactly like a single step. The arriving page
-  // starts at 5% and is full by 50%; the leaving one is gone by 45%.
-  const opacity = useTransform(p, (v) => {
-    const a = Math.abs(k - v) / span;
-    if (role === 'to') return Math.max(0, Math.min(1, (0.95 - a) / 0.45));
-    if (role === 'from') return Math.max(0, Math.min(1, 1 - a / 0.45));
-    return a < 0.001 ? 1 : 0;
+
+function DepthLayer({ k, c, v, trip, reduce, opRef }) {
+  const cells = DEPTH_CELLS[k];
+  // Opacity is re-based on every switch (see DepthTrack): each page goes from
+  // the opacity it had when the switch began to its target, over the share of
+  // the trip its role gets. The arriving page starts at 5% and is full by 50%;
+  // the leaving one is gone by 45%; anything else in the way is gone by 30%.
+  const opacity = useTransform(v, (x) => tripFade(trip.current, k, x, 'page', trip.current.o0[k]));
+  const headOpacity = useTransform(v, (x) => tripFade(trip.current, k, x, 'head', trip.current.h0[k]));
+  opRef(k, opacity, headOpacity);
+  // A whisper of blur on any page that isn't where you're going — the page
+  // passing you, or the one you're leaning away from mid-pull.
+  const filter = useTransform(v, (x) => {
+    const T = trip.current;
+    if (reduce || k === T.to && T.span) return 'blur(0px)';
+    return `blur(${Math.min(2, Math.abs(k - x) * (T.lean ? 3 : 5)).toFixed(2)}px)`;
   });
-  const lift = useTransform(p, (v) => { const d = k - v; return d < 0 ? Math.min(1, -d) : 0; });
-  const filter = useTransform(p, (v) => {
-    const d = k - v, m = Math.min(1, Math.abs(d));
-    if (role === 'from') return `blur(${Math.min(2, m * 5).toFixed(2)}px)`;
-    if (d > 0) return `saturate(${(1 - 0.35 * m).toFixed(3)}) brightness(${(1 + 0.06 * m).toFixed(3)})`;
-    return 'none';
-  });
+  const on = k === trip.current.to;
   return (
-    <motion.div className="mp-depth-layer" aria-hidden={role !== 'to'}
-      style={{ opacity, filter, '--lift': lift, height: sectionH(c.items.length), zIndex: role === 'to' ? 2 : 1, pointerEvents: role === 'to' ? 'auto' : 'none' }}>
-      {Array.from({ length: docRows(k) }, (_, r) => <DepthRow key={r} c={c} r={r} k={k} p={p} />)}
+    <motion.div className="mp-depth-layer" aria-hidden={!on}
+      style={{ opacity, filter, zIndex: on ? 2 : 1, pointerEvents: on ? 'auto' : 'none' }}>
+      <DepthCell cell={cells[0]} k={k} v={v} reduce={reduce} opacity={headOpacity}><DocHeading c={c} /></DepthCell>
+      <div className="mp-grid">
+        {cells.slice(1).map((cell) => (
+          <DepthCell key={cell.i} cell={cell} k={k} v={v} reduce={reduce}><CardInner p={PRODUCTS[c.items[cell.i]]} /></DepthCell>
+        ))}
+      </div>
     </motion.div>
   );
 }
-function DepthTrack({ active, reduce, launch, onSettle }) {
+
+function DepthTrack({ active, reduce, launch, pull, onSettle }) {
   const p = useMotionValue(active);
-  // Which page is leaving, decided in the same render as the switch. As
-  // state set in an effect it arrived a render late, and the first frame
-  // after a click had the old page with no role — opacity 0: a blank flash.
-  const last = React.useRef(active), fromRef = React.useRef(active);
-  if (last.current !== active) { fromRef.current = last.current; last.current = active; }
-  const from = fromRef.current;
+  const v = useTransform([p, pull], ([a, b]) => a + (reduce ? 0 : b));
+  const ops = React.useRef([]), heads = React.useRef([]);
+  const opRef = React.useCallback((k, o, h) => { ops.current[k] = o; heads.current[k] = h; }, []);
+  const rest = (k0) => COLLECTIONS.map((_, k) => (k === k0 ? 1 : 0));
+  const idle = (k0) => ({ from: k0, to: k0, start: k0, span: 0, o0: rest(k0), h0: rest(k0) });
+  // The trip, decided in the same render as the switch (an effect is a render
+  // late, and the first frame after a click showed the old page at 0 — a
+  // blank flash). Each page's opacity is captured as the trip starts, so a
+  // switch mid-flight hands over from wherever things are.
+  const trip = React.useRef(null);
+  if (!trip.current) trip.current = idle(active);
+  const last = React.useRef(active);
+  if (last.current !== active) {
+    const x = v.get();
+    trip.current = { from: last.current, to: active, start: x, span: Math.max(0.001, Math.abs(active - x)),
+      o0: COLLECTIONS.map((_, k) => ops.current[k]?.get() ?? (k === last.current ? 1 : 0)),
+      h0: COLLECTIONS.map((_, k) => heads.current[k]?.get() ?? (k === last.current ? 1 : 0)) };
+    last.current = active;
+  }
+  // Mid-pull, the page you're leaning toward is the one surfacing: give the
+  // pull its own little trip so the peek fades in on the arriving curve.
+  React.useEffect(() => pull.on('change', (b) => {
+    const T = trip.current;
+    // A switch owns the fades while it's in flight, and the pull folding into
+    // it (jumping to 0) mustn't reset them.
+    if (T.span && !T.lean && (p.isAnimating() || !b)) return;
+    const next = active + Math.sign(b);
+    if (!b || next < 0 || next >= COLLECTIONS.length) {
+      if (T.to !== active || T.span) trip.current = idle(active);
+      return;
+    }
+    if (T.to !== next) trip.current = { ...idle(active), to: next, span: 1, lean: true };
+  }), [active]);
   const started = React.useRef(active);
   React.useEffect(() => {
     if (started.current === active) return;
     started.current = active;
-    if (reduce) { p.set(active); onSettle(); return; }
-    const a = animate(p, active, launch.current?.v ? DEPTH_FLICK : DEPTH_EASE);
+    // The pull hands over: fold whatever the overscroll had pushed into the
+    // camera, so the switch carries on from exactly where you are.
+    const carry = pull.get();
+    if (pull.isAnimating()) pull.stop();
+    pull.jump(0); p.jump(p.get() + (reduce ? 0 : carry));
+    if (reduce) { const a = animate(p, active, { duration: 0.2, ease: 'linear' }); const t = setTimeout(onSettle, 200); return () => { a.stop(); clearTimeout(t); }; }
+    // The trip's length follows the distance: a reversal mid-flight is short
+    // and goes straight back; a jump of two runs a little longer; a flick's
+    // speed takes up to a quarter off.
+    const speed = Math.min(1, Math.abs(launch.current?.v || 0) / 1400);
+    const dist = Math.abs(active - p.get());
+    const dur = (dist < 1 ? 0.5 + 0.4 * dist : 0.9 + 0.16 * Math.min(1, dist - 1)) * (1 - 0.27 * speed);
+    // A reversal answers at once: a quick start with the same long glide (the
+    // soft start would sit still for ~100ms right when you've changed your mind).
+    const a = animate(p, active, { duration: dur, ease: dist < 0.999 ? DEPTH_BACK : DEPTH_CURVE });
     const t = setTimeout(onSettle, 600);
     return () => { a.stop(); clearTimeout(t); };
   }, [active]);
   return (
-    <div className="mp-depth" style={{ height: sectionH(COLLECTIONS[active].items.length) }}>
+    <div className="mp-depth" style={{ height: docH(active) }}>
       {COLLECTIONS.map((c, k) => (
-        <DepthLayer key={c.id} k={k} c={c} p={p} span={Math.max(1, Math.abs(active - from))} role={k === active ? 'to' : k === from ? 'from' : null} />
+        <DepthLayer key={c.id} k={k} c={c} v={v} trip={trip} reduce={reduce} opRef={opRef} />
       ))}
     </div>
   );
@@ -1319,6 +1431,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const frameRef = React.useRef(null);
   // V4 · Liquid Tab: how far (in rows) an overscroll has pulled the tab.
   const liquidPull = useMotionValue(0);
+  // V5 · Depth: how far (of one step) an overscroll has pushed the camera.
+  const depthPull = useMotionValue(0);
   const activeRef = React.useRef(0);
   React.useEffect(() => { activeRef.current = active; }, [active]);
 
@@ -1364,8 +1478,19 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
         if (liquidPull.isAnimating()) liquidPull.stop();
         liquidPull.set((cap === PULL ? 0.42 : 0.12) * (1 - (1 - f) * (1 - f)) * (down ? 1 : -1));
       }
+      // V5 · Depth: the overscroll pushes the camera toward the next
+      // collection, which starts to surface behind the page. Eased so it
+      // resists as it goes; at the ends (nothing behind) only a lean.
+      if (style === 'depth2' && !reduce) {
+        const f = Math.min(1, Math.abs(acc) / OVERSCROLL);
+        if (depthPull.isAnimating()) depthPull.stop();
+        depthPull.set((cap === PULL ? DEPTH_PULL_MAX : 0.035) * (1 - (1 - f) * (1 - f)) * (down ? 1 : -1));
+      }
     };
-    const release = () => {
+    const release = (switching) => {
+      // Depth: let go and the camera eases back. On a switch the track folds
+      // the pull into the trip itself, so it's left where it is.
+      if (style === 'depth2' && switching !== true && depthPull.get() !== 0) animate(depthPull, 0, DEPTH_PULL_BACK);
       // Liquid: let go and the stretched tab springs back — or, when the
       // switch fired, hands over to the lead end that is already on its way.
       if (style === 'liquid' && liquidPull.get() !== 0) animate(liquidPull, 0, LIQ_RELEASE);
@@ -1402,7 +1527,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       const next = activeRef.current + (down ? 1 : -1);
       if (next < 0 || next >= COLLECTIONS.length) return;
       launchRef.current = { v: (down ? -1 : 1) * g.speed };
-      release();
+      release(true);
       g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now(); g.coast = false;
       setDir(down ? 1 : -1);
       setActive(next);
@@ -2119,7 +2244,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       </nav>
 
       {/* content */}
-      <div className="mp-content" data-doc={(style === 'liquid' || style === 'chain' || style === 'origami') ? '' : undefined}>
+      <div className="mp-content" data-doc={(style === 'liquid' || style === 'chain' || style === 'origami' || style === 'depth2') ? '' : undefined}>
         <div className="mp-header">
           <div className="mp-title-wrap">
             {/* Always popLayout: the blur morph needs the old and new names
@@ -2173,11 +2298,12 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
         <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}
           data-sig={style === 'signature' ? '' : undefined}
           data-track={(style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain') ? '' : undefined}
-          data-stack={style === 'stack' ? '' : undefined}>
+          data-stack={style === 'stack' ? '' : undefined}
+          data-depth={style === 'depth2' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
         {style === 'depth2' ? (
-          <DepthTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
+          <DepthTrack active={active} reduce={reduce} launch={launchRef} pull={depthPull} onSettle={() => setMoving(false)} />
         ) : style === 'silhouette' ? (
           <SilhouetteMorph active={active} reduce={reduce} onSettle={() => setMoving(false)} />
         ) : style === 'gooey' ? (
