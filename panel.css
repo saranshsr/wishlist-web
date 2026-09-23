@@ -230,3 +230,9 @@
 
 /* V2 · Deal heading — letters are dealt in one by one (see dealCharV). */
 .mp-title-ch{display:inline-block;transform-origin:50% 100%}
+
+/* Comparison toggle (index.html, "Edge blur & fade: Off"): the same
+   transitions with the clipping treatment removed — no edge mask, no blur
+   overlays. Cards clip hard at the stage edge. Nothing else changes. */
+html[data-edge-off] .mp-stage{-webkit-mask-image:none;mask-image:none}
+html[data-edge-off] .mp-edge{display:none}

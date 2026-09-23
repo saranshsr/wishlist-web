@@ -51,6 +51,14 @@ The grid always fits the panel in these, so nothing scrolls and the edge fade
 and blur are switched off: cards are never clipped. Scrolling past an edge
 still switches folders.
 
+## Edge blur & fade toggle
+
+The pill on the right (beside the picker on narrower windows) switches the
+clipping treatment off — no edge fade, no edge blur — so V1 and V3 can be
+compared with and without it. Nothing else about the transitions changes.
+`E` toggles it, and `?edge=off` opens a link with it off. V2 never clips, so
+the toggle is greyed out there.
+
 ## Run locally
 
 Double-click `start.command`, or:

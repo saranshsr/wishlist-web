@@ -133,6 +133,23 @@
   .proto-picker-item:active{transform:scale(.97)}
   .proto-picker-item:focus-visible{outline:2px solid rgba(255,255,255,.4);outline-offset:2px}
   .proto-picker-item[data-active]{color:#fff}
+  /* Edge toggle — same harness chrome as the picker, docked on the right so
+     it reads as a separate control. It only switches the clipping treatment
+     (the edge fade and blur); the transitions themselves are untouched. */
+  .proto-edge{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:2147483647;display:flex;flex-direction:column;align-items:stretch;gap:2px;padding:4px;border-radius:18px;background:rgba(10,10,10,.82);-webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4);box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 8px 24px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+  .proto-edge-label{padding:8px 12px 6px;color:rgba(255,255,255,.4);font-size:11px;letter-spacing:.02em}
+  .proto-edge .proto-picker-item{justify-content:flex-start}
+  .proto-edge[data-inert] .proto-picker-item{opacity:.4;pointer-events:none}
+  .proto-edge-note{padding:4px 12px 8px;color:rgba(255,255,255,.4);font-size:11px;max-width:120px;line-height:1.35;display:none}
+  .proto-edge[data-inert] .proto-edge-note{display:block}
+  /* Too narrow for the side gutter (the panel is 1200px): dock bottom-right
+     as a horizontal pill beside the picker instead of covering the panel's
+     edge; --picker-half is measured from the picker in JS. */
+  @media (max-width:1559px){
+    .proto-edge{top:auto;bottom:24px;right:auto;left:calc(50% + var(--picker-half, 150px) + 10px);transform:none;flex-direction:row;align-items:center;border-radius:999px}
+    .proto-edge-label{padding:0 6px 0 10px}
+    .proto-edge[data-inert] .proto-edge-note{display:none}
+  }
 </style>
 
 <!-- framer-motion must be v12 (v11 predates React 19: AnimatePresence exits
@@ -268,6 +285,13 @@
   <button class="proto-picker-item">V3 · Carousel</button>
 </nav>
 
+<div class="proto-edge" role="radiogroup" aria-label="Edge blur and fade">
+  <span class="proto-edge-label">Edge blur &amp; fade</span>
+  <button class="proto-picker-item" role="radio" data-edge="on" data-active aria-checked="true">On</button>
+  <button class="proto-picker-item" role="radio" data-edge="off" aria-checked="false">Off</button>
+  <span class="proto-edge-note">V2 has no edge fade to compare</span>
+</div>
+
 <script>
   // A module script's top-level await rejects silently — the panel slot just
   // stays empty and it reads as a layout bug. Surface it instead.
@@ -298,11 +322,13 @@
   const mount = (i) => root.render(React.createElement(mod.default,
     { key: STYLES[i], fixedStyle: STYLES[i], fixedMode: 'wait', chrome: false }));
 
+  const edgeBox = document.querySelector('.proto-edge');
+  const edgeBtns = [...edgeBox.querySelectorAll('[data-edge]')];
   const picker = document.querySelector('.proto-picker');
   const hl = picker.querySelector('.proto-picker-highlight');
   const items = [...picker.querySelectorAll('.proto-picker-item')];
   let cur = 0;
-  const move = () => { const el = items[cur]; hl.style.width = el.offsetWidth + 'px'; hl.style.transform = `translateX(${el.offsetLeft}px)`; };
+  const move = () => { document.documentElement.style.setProperty('--picker-half', picker.offsetWidth / 2 + 'px'); const el = items[cur]; hl.style.width = el.offsetWidth + 'px'; hl.style.transform = `translateX(${el.offsetLeft}px)`; };
   function setActive(i) {
     if (i < 0 || i >= STYLES.length) return;
     cur = i;
@@ -310,7 +336,21 @@
     move();
     const url = new URL(location); url.searchParams.set('v', i + 1); history.replaceState(null, '', url);
     mount(i);
+    // V2 (Deal) never clips, so it has no edge treatment to compare.
+    edgeBox.toggleAttribute('data-inert', STYLES[i] === 'deal');
+    edgeBox.title = STYLES[i] === 'deal' ? 'V2 has no edge fade to compare' : '';
   }
+
+  /* Edge blur & fade toggle. Flips one attribute on <html>; panel.css drops
+     the stage mask and the blur overlays under it. No remount — it applies
+     to the next switch as-is, so the same transition can be compared
+     back-to-back. Kept in the URL (?edge=off) and on the E key. */
+  function setEdge(on) {
+    document.documentElement.toggleAttribute('data-edge-off', !on);
+    edgeBtns.forEach((b) => { const a = (b.dataset.edge === 'on') === on; b.toggleAttribute('data-active', a); b.setAttribute('aria-checked', String(a)); });
+    const url = new URL(location); on ? url.searchParams.delete('edge') : url.searchParams.set('edge', 'off'); history.replaceState(null, '', url);
+  }
+  edgeBtns.forEach((b) => b.addEventListener('click', () => setEdge(b.dataset.edge === 'on')));
   items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
   addEventListener('resize', move);
   document.addEventListener('keydown', (e) => {
@@ -320,9 +360,11 @@
     if (n >= 1 && n <= STYLES.length) setActive(n - 1);
     else if (e.key === 'ArrowRight') setActive((cur + 1) % STYLES.length);
     else if (e.key === 'ArrowLeft') setActive((cur - 1 + STYLES.length) % STYLES.length);
+    else if (e.key === 'e' || e.key === 'E') setEdge(document.documentElement.hasAttribute('data-edge-off'));
   });
   // Clamped, so an old ?v=4 link (V4 was retired) still opens a version.
   setActive(Math.min(STYLES.length, Math.max(1, parseInt(new URLSearchParams(location.search).get('v'), 10) || 1)) - 1);
+  setEdge(new URLSearchParams(location.search).get('edge') !== 'off');
   requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
   window.__ready = true;
 </script>
