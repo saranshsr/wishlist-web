@@ -2071,8 +2071,18 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   /* V4 · Liquid Tab: the scroll pull (in rows) rides on the lead end, so the
      tab starts stretching toward the next row while you're still scrolling. */
   const leadEdge = useTransform([edgeA, liquidPull], ([a, p]) => a + p);
-  const notchY = useTransform([leadEdge, edgeB], ([a, b]) => `translateY(${(Math.min(a, b) * RAIL_ROW_H + NOTCH_TOP).toFixed(2)}px)`);
-  const notchH = useTransform([leadEdge, edgeB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
+  /* The blue marker always runs on its own two springs (NOTCH_LEAD/TRAIL), in
+     every version. In Liquid it used to ride the white shape's 0.62/0.9s
+     glide, whose soft start made it lag and crawl compared with the rest. */
+  const markA = useMotionValue(0), markB = useMotionValue(0);
+  React.useEffect(() => {
+    if (reduce) { markA.set(active); markB.set(active); return; }
+    const a = animate(markA, active, NOTCH_LEAD);
+    const b = animate(markB, active, NOTCH_TRAIL);
+    return () => { a.stop(); b.stop(); };
+  }, [active]);
+  const notchY = useTransform([markA, markB], ([a, b]) => `translateY(${(Math.min(a, b) * RAIL_ROW_H + NOTCH_TOP).toFixed(2)}px)`);
+  const notchH = useTransform([markA, markB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
 
   return (
     <motion.div className="mp-frame" ref={frameRef}
