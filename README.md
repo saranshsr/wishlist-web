@@ -2,15 +2,15 @@
 
 A recreation of the noon desktop wishlist page (Figma file `bGeam4dYWnlJLz0uJ91DdQ`,
 panel frame `419:535726`) with a live saved-items panel in the middle, built to
-review **seven collection-switch transitions** side by side.
+review **eight collection-switch transitions** side by side.
 
 The page chrome (top nav, category bar, list switcher, help band, footer) is
 static. Only the panel is interactive.
 
-## The seven versions
+## The eight versions
 
-Switch with the dark pill at the bottom of the page, the `1`–`7` keys, or
-`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=7`), so a link opens on
+Switch with the dark pill at the bottom of the page, the `1`–`8` keys, or
+`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=8`), so a link opens on
 a specific version.
 
 | | Version | What moves | Feel |
@@ -22,13 +22,14 @@ a specific version.
 | V5 | **Spring Chain** | Every heading and row is a link in one physical chain (simulated per frame), pulled from the front of the collection you're leaving. The links behind hang back in proportion to speed, so the gaps open as it sets off, then gently bunch up as it brakes and settle — stretch, then compress. Slack is capped so nothing ever touches. Each collection carries its own heading. | The page travelling as one physical body |
 | V6 | **Depth** | Apple-style spatial crossfade between peers (visionOS / iOS). The page you leave recedes into the screen — eases to 0.97, softly blurs and fades — while the new one arrives from just in front of the glass, settling from 1.035 to exact size as it rises 36px along the rail's direction and sharpens from a blur; its rows land 35ms apart. One critically damped spring, no bounce, carries the scroll's speed. | The next page coming into focus in front of you |
 | V7 | **Gooey** | The cards melt. Each card's content dissolves to a pale bead, the gutters fill and the beads run together into one liquid sheet (WebGL, smooth-blended rounded rects), the sheet reshapes to the new layout — spare cards pour into a neighbour, new ones are drawn out of one — then tears back into cards as the new content resolves on each. | One substance reshaping itself |
+| V8 | **Silhouette** | The cards fade to soft grey silhouettes, grow until the gutters close into one shape, and that shape morphs into the new layout (2 rows → 1, 4 columns → 2; the leading row goes first along the rail's direction) — spare slots are absorbed by a neighbour, new ones grow out of one. Then the gutters reopen and the new cards fade in over their silhouettes. | The page's shape morphing, then its content |
 
 V2 and V3 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would
 collide otherwise. V2's grid always fits, so it never clips or fades at the
 edges.
 
-Common to all seven:
+Common to all eight:
 - **Live link:** https://wishlist-web-ivory.vercel.app — every push to `main` redeploys it.
 - **Scroll switches collections**, anywhere over the panel (rail included). One flick is one switch; a second flick — even while the first one's trackpad momentum is still running — or a flick back the other way is read straight away. The grid stretches with a rubber band before switching; V1 and V3 also carry your scroll speed into the transition.
 - **The heading changes with the version.** In V1 and V3 it blur-morphs: the old folder name dissolves into a blur while the new one sharpens out of it, in the same spot. V2 has no blur anywhere, so there the new name is dealt in letter by letter, left to right in the order the cards are dealt, each letter settling down from just above — no tilt.

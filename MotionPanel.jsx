@@ -48,7 +48,7 @@ const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PI
 /* Card-table styles: the grid always fits the stage, so it never scrolls and
    nothing needs the edge fade. Their cards tilt, stack and turn past the grid's
    edges, so the stage stops clipping for them (data-open) — no mask, no blur. */
-const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami', 'gooey']);
+const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami', 'gooey', 'silhouette']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
 const TRACK_GAP = 48, TRACK_SCALE = 0.75;   // V3 · Carousel (measured)
@@ -961,6 +961,240 @@ function GooeyFade({ active }) {
 }
 /* ---- GOOEY END ---- */
 
+/* ---- SILHOUETTE START ---- */
+/* V · Silhouette Morph — the page's shape morphs, then its content.
+   Under the grid sits one soft silhouette per slot (at most 7). At rest they
+   are hidden and exactly under the cards. On a switch the old cards fade to
+   their silhouettes, every silhouette dilates by 10px — the 20px gutters
+   close and the grid reads as ONE merged shape (seam corners go square,
+   outer corners grow 12 → 22, which is the true offset of a 12px corner) —
+   that shape morphs into the new collection's layout, then contracts back
+   into card-sized pieces as the new cards fade in over them.
+   Geometry is split in two so an interruption is always a retarget:
+     • base  — each slot's card rect (x, y, w, h) plus how "outer" each of its
+               four corners is (0 seam … 1 outer). Morphs layout → layout.
+     • m     — one global merge amount (0 cards … 1 merged) that dilates every
+               rect and squares the seams.
+   A slot the layout doesn't have sits exactly on its anchor (the nearest slot
+   it does have, same rect, same corners), so it emerges from / is absorbed
+   into the block rather than popping. Because every slot shares one curve,
+   neighbours overlap at least as fast as a corner rounds, so the merged shape
+   never shows a notch at a seam. */
+const SIL_E = 10;                    // dilation: half the gutter, neighbours touch
+const SIL_R = 12;                    // the card's own radius
+const SIL_MAX = 7;
+const SIL_MORPH = [0.77, 0, 0.175, 1];
+const SIL_T = {
+  out: 0.12,                         // old cards fade to silhouettes
+  merge: 0.2,                        // gutters close (m 0 → 1)
+  morphAt: 0.1, morph: 0.48,         // the shape travels (0.48 for the longest trip, ~550px)
+  lag: 0.05,                         // direction bias: the trailing row starts this much later
+  release: 0.2,                      // gutters reopen (m 1 → 0), overlaps morph end
+  inDur: 0.18,                       // new cards fade in over their silhouettes
+};
+// Interruptions retarget on a spring, which keeps the shape's velocity.
+const SIL_RETARGET = { type:'spring', bounce:0 };
+// Short trips take less time, so the shape never sits merged after arriving.
+const silReach = (dist) => Math.min(1, dist / 550);
+const silRows = (n) => Math.max(1, Math.ceil(n / COLS));
+const silLastCol = (n, r) => (r < silRows(n) - 1 ? COLS - 1 : (n - 1) % COLS);
+const silHas = (n, r, c) => r >= 0 && c >= 0 && c < COLS && r * COLS + c < n;
+// The nearest slot the layout has: same row if it exists, else the last row;
+// never further right than that row's last card.
+const silAnchor = (s, n) => {
+  if (s < n) return s;
+  const r = Math.min(Math.floor(s / COLS), silRows(n) - 1);
+  return r * COLS + Math.min(s % COLS, silLastCol(n, r));
+};
+// Outer-ness of a present slot's corners [tl, tr, br, bl] in layout n: a corner
+// is on the merged shape's outline only if neither neighbour it touches exists.
+const silCorners = (a, n) => {
+  const r = Math.floor(a / COLS), c = a % COLS, h = (dr, dc) => silHas(n, r + dr, c + dc);
+  return [!h(0, -1) && !h(-1, 0), !h(0, 1) && !h(-1, 0), !h(0, 1) && !h(1, 0), !h(0, -1) && !h(1, 0)].map(Number);
+};
+const silTarget = (s, n) => {
+  const a = silAnchor(s, n);
+  return { x: (a % COLS) * (CARD_W + GAP), y: Math.floor(a / COLS) * ROW_PITCH, c: silCorners(a, n) };
+};
+
+function SilRect({ sv, m, so }) {
+  const x = useTransform([sv.x, m], ([v, k]) => v - SIL_E * k);
+  const y = useTransform([sv.y, m], ([v, k]) => v - SIL_E * k);
+  const width = useTransform(m, (k) => CARD_W + 2 * SIL_E * k);
+  const height = useTransform(m, (k) => CARD_H + 2 * SIL_E * k);
+  // Outer corners grow with the dilation (12 → 22); seams square off (12 → 0).
+  const rad = (c) => useTransform([c, m], ([o, k]) => o * (SIL_R + SIL_E * k) + (1 - o) * SIL_R * (1 - k));
+  const r0 = rad(sv.c[0]), r1 = rad(sv.c[1]), r2 = rad(sv.c[2]), r3 = rad(sv.c[3]);
+  return (
+    <motion.span className="mp-silo-rect" aria-hidden onUpdate={JS_DRIVEN}
+      style={{ x, y, width, height, opacity: so,
+        borderTopLeftRadius: r0, borderTopRightRadius: r1, borderBottomRightRadius: r2, borderBottomLeftRadius: r3 }} />
+  );
+}
+
+/* Concave fillets. The union of rounded rects has soft outer corners but a
+   sharp inner one wherever a row is shorter than the one above (the step at
+   the bottom right of seven cards) or where two moving slots don't line up.
+   Each frame, every rect corner that has exactly three of its four quadrants
+   covered is an inner corner; a small square in the open quadrant, painted
+   in the silhouette colour minus a circle, rounds it off. Its size is capped
+   by the two edges it sits on (so it shrinks to nothing as a step closes —
+   no pops) and grows in only once the gutters have actually closed. */
+const SIL_FILLET = 20, SIL_FILLETS = 4;
+const silRects = (m, raw) => {
+  const out = [];
+  for (let s = 0; s < SIL_MAX; s++) {
+    const o = s * 6, x = raw[o], y = raw[o + 1], c = raw.slice(o + 2, o + 6);
+    out.push({ x: x - SIL_E * m, y: y - SIL_E * m, w: CARD_W + 2 * SIL_E * m, h: CARD_H + 2 * SIL_E * m,
+      r: c.map((k) => k * (SIL_R + SIL_E * m) + (1 - k) * SIL_R * (1 - m)) });
+  }
+  return out;
+};
+const silCornerIdx = (sx, sy) => (sy < 0 ? (sx < 0 ? 0 : 1) : (sx > 0 ? 2 : 3));
+function silFillets([m, ...raw]) {
+  const grow = Math.max(0, Math.min(1, (m - 0.95) / 0.05));
+  if (!grow) return [];
+  const R = silRects(m, raw), T = 1;   // coverage tolerance, px
+  const hit = (px, py) => R.find((q) => px > q.x - T && px < q.x + q.w + T && py > q.y - T && py < q.y + q.h + T);
+  const seen = new Set(), out = [];
+  for (const a of R) for (const [px, py] of [[a.x, a.y], [a.x + a.w, a.y], [a.x + a.w, a.y + a.h], [a.x, a.y + a.h]]) {
+    const key = Math.round(px * 2) + ',' + Math.round(py * 2);
+    if (seen.has(key)) continue; seen.add(key);
+    const d = 2.5, open = [];
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) if (!hit(px + sx * d, py + sy * d)) open.push([sx, sy]);
+    if (open.length !== 1) continue;
+    const [ux, uy] = open[0], ci = silCornerIdx(ux, uy);
+    // The edge running along y = py into the open quadrant, and the one along x = px.
+    const hq = R.filter((q) => px + ux * d > q.x && px + ux * d < q.x + q.w && py - uy * d > q.y && py - uy * d < q.y + q.h);
+    const vq = R.filter((q) => px - ux * d > q.x && px - ux * d < q.x + q.w && py + uy * d > q.y && py + uy * d < q.y + q.h);
+    if (!hq.length || !vq.length) continue;
+    const lenX = Math.max(...hq.map((q) => (ux > 0 ? q.x + q.w - px : px - q.x) - q.r[ci]));
+    const lenY = Math.max(...vq.map((q) => (uy > 0 ? q.y + q.h - py : py - q.y) - q.r[ci]));
+    const f = Math.min(SIL_FILLET * grow, lenX, lenY);
+    if (f > 0.5) out.push({ x: ux > 0 ? px : px - f, y: uy > 0 ? py : py - f, f, ux, uy });
+    if (out.length === SIL_FILLETS) return out;
+  }
+  return out;
+}
+function SilFillet({ fs, i, so }) {
+  const pick = (fn, dflt) => useTransform(fs, (l) => (l[i] ? fn(l[i]) : dflt));
+  const x = pick((q) => q.x, 0), y = pick((q) => q.y, 0), size = pick((q) => q.f, 0);
+  const background = pick((q) => `radial-gradient(circle ${q.f}px at ${q.ux > 0 ? '100%' : '0%'} ${q.uy > 0 ? '100%' : '0%'}, transparent ${Math.max(0, q.f - 0.8)}px, var(--sil-fill) ${q.f}px)`, 'none');
+  const opacity = useTransform([fs, so], ([l, o]) => (l[i] ? o : 0));
+  return <motion.span className="mp-silo-fillet" aria-hidden style={{ x, y, width: size, height: size, background, opacity }} />;
+}
+
+function SilGrid({ c, op, on }) {
+  // Its own layer only while it fades, so the settled grid renders exactly
+  // like every other version's.
+  const willChange = useTransform(op, (v) => (v > 0 && v < 1 ? 'opacity' : 'auto'));
+  return (
+    <motion.div className="mp-grid mp-silo-grid" aria-hidden={!on} onUpdate={JS_DRIVEN}
+      style={{ opacity: op, willChange, pointerEvents: on ? 'auto' : 'none', zIndex: on ? 2 : 1 }}>
+      {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
+    </motion.div>
+  );
+}
+
+function SilhouetteMorph({ active, reduce, onSettle }) {
+  const n0 = COLLECTIONS[active].items.length;
+  const sv = React.useMemo(() => Array.from({ length: SIL_MAX }, (_, s) => {
+    const t = silTarget(s, n0);
+    return { x: motionValue(t.x), y: motionValue(t.y), c: t.c.map((v) => motionValue(v)) };
+  }), []);
+  const m = useMotionValue(0);      // merge amount
+  const so = useMotionValue(0);     // silhouette layer opacity: 0 at rest
+  const ops = React.useMemo(() => COLLECTIONS.map((_, k) => motionValue(k === active ? 1 : 0)), []);
+  const fs = useTransform([m, ...sv.flatMap((v) => [v.x, v.y, ...v.c])], silFillets);
+  const [shown, setShown] = useState([active]);
+  const activeRef = React.useRef(active);
+  const busy = React.useRef(false);  // base geometry in motion → retarget on a spring
+  const first = React.useRef(true);
+
+  React.useEffect(() => {
+    const dir = Math.sign(active - activeRef.current), nPrev = COLLECTIONS[activeRef.current].items.length;
+    activeRef.current = active;
+    if (first.current) { first.current = false; return; }
+    setShown((sh) => (sh.includes(active) ? sh : [...sh, active]));
+    const n = COLLECTIONS[active].items.length;
+    const anims = [], timers = [];
+    // A faded-out grid unmounts, unless it has become the target again.
+    const prune = () => setShown((sh) => sh.filter((k) => k === activeRef.current || ops[k].get() > 0.001));
+    const snapBase = () => sv.forEach((v, s) => { const t = silTarget(s, n); v.x.set(t.x); v.y.set(t.y); v.c.forEach((cv, j) => cv.set(t.c[j])); });
+
+    if (reduce) {
+      // Plain 200ms crossfade; the silhouettes stay out of it.
+      snapBase(); m.set(0); so.set(0);
+      ops.forEach((o, k) => anims.push(animate(o, k === active ? 1 : 0, { duration: 0.2, ease: EASE_OUT })));
+      timers.push(setTimeout(() => { prune(); onSettle(); }, 220));
+      return () => { anims.forEach((a) => a.stop()); timers.forEach(clearTimeout); };
+    }
+
+    // Already merged (a switch mid-flight)? Then skip straight to the morph.
+    const m0 = m.get();
+    const mergeEnd = SIL_T.merge * (1 - m0);
+    const morphAt = SIL_T.morphAt * (1 - m0);
+    // Direction bias, only when there are two rows to bias: going down the
+    // rail the bottom row leads and the shape flows upward; going up, the top
+    // row leads and the shape pours downward. This order keeps the leading
+    // row overlapping the trailing one, so seams stay closed.
+    const twoRows = Math.max(n, nPrev) > COLS;
+    const lagOf = (s) => (twoRows ? (dir > 0 ? 1 - Math.floor(s / COLS) : Math.floor(s / COLS)) * SIL_T.lag : 0);
+    const retarget = busy.current;
+    const left = () => Math.max(...sv.map((v, s) => { const t = silTarget(s, n); return Math.hypot(t.x - v.x.get(), t.y - v.y.get()); }));
+    const dist = left();
+    const dur = retarget ? 0.2 + 0.14 * silReach(dist) : SIL_T.morph - 0.1 * (1 - silReach(dist));
+
+    so.set(1);   // under still-opaque cards: invisible until they fade
+    // Every grid showing fades to its silhouettes — the target too, if a
+    // reversal caught it mid-fade; it comes back once the shape has landed.
+    ops.forEach((o, k) => {
+      const v0 = o.get();
+      if (v0 > 0) anims.push(animate(o, 0, { duration: SIL_T.out * Math.max(0.35, v0), ease: EASE_OUT, onComplete: k === active ? undefined : prune }));
+    });
+    if (m0 < 1) anims.push(animate(m, 1, { duration: mergeEnd, ease: [0.33, 0, 0.2, 1] }));
+
+    const base = retarget ? { ...SIL_RETARGET, visualDuration: dur } : { duration: dur, ease: SIL_MORPH };
+    busy.current = true;
+    sv.forEach((v, s) => {
+      const t = silTarget(s, n), opt = { ...base, delay: morphAt + lagOf(s) };
+      anims.push(animate(v.x, t.x, opt), animate(v.y, t.y, opt));
+      v.c.forEach((cv, j) => anims.push(animate(cv, t.c[j], opt)));
+    });
+
+    // Release when the shape has actually landed — merged, and within 5% of
+    // the trip (or 4px) of its target — not at a predicted time: a retarget
+    // spring that inherits the shape's speed arrives well before its nominal
+    // duration, and a merged shape sitting still reads as a stall.
+    const t0 = performance.now(), gate = (Math.max(mergeEnd, morphAt + (twoRows ? SIL_T.lag : 0)) + 0.02) * 1000;
+    const near = Math.max(4, dist * 0.06);
+    let raf = 0;
+    const release = () => {
+      busy.current = false;
+      anims.push(animate(m, 0, { duration: SIL_T.release, ease: [0.6, 0, 0.3, 1] }));
+      anims.push(animate(ops[active], 1, { delay: 0.03, duration: SIL_T.inDur, ease: EASE_OUT }));
+      const inEnd = 0.03 + SIL_T.inDur;
+      timers.push(setTimeout(() => anims.push(animate(so, 0, { duration: 0.06, ease: 'linear' })), (inEnd + 0.01) * 1000));
+      timers.push(setTimeout(() => { prune(); onSettle(); }, (Math.max(SIL_T.release, inEnd) + 0.08) * 1000));
+    };
+    const watch = () => {
+      if (performance.now() - t0 >= gate && left() <= near) { raf = 0; release(); return; }
+      raf = requestAnimationFrame(watch);
+    };
+    raf = requestAnimationFrame(watch);
+    return () => { cancelAnimationFrame(raf); anims.forEach((a) => a.stop()); timers.forEach(clearTimeout); };
+  }, [active]);
+
+  return (
+    <div className="mp-silo" style={{ height: sectionH(n0) }}>
+      {sv.map((v, s) => <SilRect key={s} sv={v} m={m} so={so} />)}
+      {Array.from({ length: SIL_FILLETS }, (_, i) => <SilFillet key={i} fs={fs} i={i} so={so} />)}
+      {shown.map((k) => <SilGrid key={COLLECTIONS[k].id} c={COLLECTIONS[k]} op={ops[k]} on={k === active} />)}
+    </div>
+  );
+}
+/* ---- SILHOUETTE END ---- */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -1199,7 +1433,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
     // one, and it is short so the band can't outlive the movement.
-    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain' || style === 'origami') ? 1100 : style === 'wordmorph' ? 620 : 340);
+    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain' || style === 'origami' || style === 'silhouette') ? 1100 : style === 'wordmorph' ? 620 : 340);
     return () => clearTimeout(t);
   }, [active]);
 
@@ -1835,7 +2069,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           data-stack={style === 'stack' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {style === 'gooey' ? (
+        {style === 'silhouette' ? (
+          <SilhouetteMorph active={active} reduce={reduce} onSettle={() => setMoving(false)} />
+        ) : style === 'gooey' ? (
           reduce ? <GooeyFade active={active} /> : <GooeyMerge active={active} dir={dir} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : style === 'origami' ? (
           <OrigamiTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />

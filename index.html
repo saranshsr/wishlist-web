@@ -289,6 +289,7 @@
   <button class="proto-picker-item">V5 · Spring Chain</button>
   <button class="proto-picker-item">V6 · Depth</button>
   <button class="proto-picker-item">V7 · Gooey</button>
+  <button class="proto-picker-item">V8 · Silhouette</button>
 </nav>
 
 <div class="proto-edge" role="radiogroup" aria-label="Edge blur and fade">
@@ -322,7 +323,7 @@
   // to the rail; V4 Liquid Tab and V5 Spring Chain treat the page
   // as one document (the tab and its page are one body / one physical chain). The wider exploration lives in lab.html and
   // saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'deal', 'carousel', 'liquid', 'chain', 'depth2', 'gooey'];
+  const STYLES = ['slide', 'deal', 'carousel', 'liquid', 'chain', 'depth2', 'gooey', 'silhouette'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
@@ -344,8 +345,8 @@
     const url = new URL(location); url.searchParams.set('v', i + 1); history.replaceState(null, '', url);
     mount(i);
     // V2 (Deal) never clips, so it has no edge treatment to compare.
-    // V2 and V7 never clip, so they have no edge treatment to compare.
-    const noEdge = ['deal', 'gooey'].includes(STYLES[i]);
+    // V2, V7 and V8 never clip, so they have no edge treatment to compare.
+    const noEdge = ['deal', 'gooey', 'silhouette'].includes(STYLES[i]);
     edgeBox.toggleAttribute('data-inert', noEdge);
     edgeBox.title = noEdge ? 'This version has no edge fade to compare' : '';
   }
