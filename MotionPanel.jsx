@@ -13,7 +13,7 @@
  * Bar: Emil + Apple — transform/opacity/filter only, springs, reduced-motion.
  */
 import React, { useState } from 'react';
-import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useMotionValue, useTransform, animate, motionValue } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useMotionValue, useTransform, useVelocity, animate, motionValue } from 'framer-motion';
 
 /* Where the product imagery lives, relative to the HOST page — the harness sits
    two levels down from assets/, the shipped page sits beside it. */
@@ -77,10 +77,102 @@ const NOTCH_TRAIL = { type:'spring', stiffness:260, damping:30, delay:0.04 };
    collection's first item and the wings are its 2nd and 3rd, falling back to
    the frame's own filler images for a collection that hasn't got three. */
 const FAN_FILL = ['38e2f.png', 'ec267.png'];
-function FolderPreview({ items }) {
+/* ---- TAB DELIGHT START ----
+   Selecting a tab makes its folder hop: the cover card is kicked up, the two
+   wings follow 40ms later and splay out a touch as they lift (follow-through —
+   loose cards trailing the one you grabbed), then everything lands with one
+   small dip and settles. The folder being put down gets a 1px settle.
+
+   Physics, not a keyframe curve: every channel (x, y, rotation) is a damped
+   spring and a hop is an impulse — a kick to its velocity. A second switch
+   mid-hop reads the channel's live position AND velocity and kicks again from
+   there, so rapid switching adds up like real bounces instead of restarting
+   or stacking.
+
+   The springs are sampled into WAAPI keyframes on the individual `translate`
+   and `rotate` properties. Those compose with — never replace — the
+   `transform` the hover rules set, and they run on the compositor. Nothing is
+   added to the markup, and at rest both properties are `none` again. */
+const HOP = { w: 15, z: 0.42 };          // ω rad/s, damping ratio: 1 dip of ~24%, no second bounce you can see
+const HOP_DT = 1 / 60, HOP_MAX = 0.8;    // sample step and sampled length (s); past ~0.5s the tail is < 0.3px, by 0.8s < 0.05px
+/* Visual centre minus the transform-origin, per card, from the rest matrices
+   (`e,f` of .mp-fan-l/-r/-mid). `rotate` pivots on the origin, so a rotation
+   is paired with the translate that keeps each card turning about its own
+   centre, the way the hover tilt does. */
+const HOP_ARM = { l: [-27.567, -21.469], r: [-5.197, -21.469], mid: [-18.332, -24.109] };
+/* Peak offsets. y is px (negative = up), x px, r deg. 68px fan — a 4px hop is
+   a 7% jump, clearly a hop without leaving the row. */
+const HOP_SELECT = {
+  mid: { d: 0,    x: 0,    y: -4,   r: -1.5 },  // the cover tips as it lifts, like the hover
+  l:   { d: 0.04, x: -1.5, y: -3,   r: -4 },
+  r:   { d: 0.04, x: 1.5,  y: -3,   r: 4 },
+};
+const HOP_SETTLE = {                     // the folder you left: set down, 1px
+  mid: { d: 0,    x: 0, y: 1,   r: 0 },
+  l:   { d: 0.02, x: 0, y: 0.8, r: 0 },
+  r:   { d: 0.02, x: 0, y: 0.8, r: 0 },
+};
+const hopWd = HOP.w * Math.sqrt(1 - HOP.z * HOP.z);
+// Free response of the spring from (x0, v0) after t seconds.
+const hopFree = (x0, v0, t) => {
+  const e = Math.exp(-HOP.z * HOP.w * t);
+  return e * (x0 * Math.cos(hopWd * t) + ((v0 + HOP.z * HOP.w * x0) / hopWd) * Math.sin(hopWd * t));
+};
+// The kick that makes a spring at rest peak at exactly 1.
+const HOP_UNIT = (() => {
+  const tp = Math.atan(hopWd / (HOP.z * HOP.w)) / hopWd;
+  return 1 / hopFree(0, 1, tp);
+})();
+
+function useTabHop(fanRef, selected, reduce) {
+  const prev = React.useRef(selected);
+  const live = React.useRef(new Map());   // card el -> { anim, f(t) -> [x,y,r] }
+  React.useEffect(() => {
+    const was = prev.current; prev.current = selected;
+    const fan = fanRef.current;
+    if (was === selected || !fan) return;           // mount, or no change
+    if (reduce) {
+      // No movement: the new folder just brightens in.
+      if (selected) fan.animate([{ opacity: 0.55 }, { opacity: 1 }], { duration: 220, easing: 'cubic-bezier(.23,1,.32,1)' });
+      return;
+    }
+    const plan = selected ? HOP_SELECT : HOP_SETTLE;
+    for (const k of ['l', 'r', 'mid']) {
+      const el = fan.querySelector('.mp-fan-' + k); if (!el) continue;
+      const p = plan[k], [ax, ay] = HOP_ARM[k];
+      // Where this card is right now, and how fast it is moving.
+      const old = live.current.get(el);
+      let s0 = [0, 0, 0], v0 = [0, 0, 0];
+      if (old && old.anim.playState === 'running') {
+        const t = (old.anim.currentTime || 0) / 1000, a = old.f(t), b = old.f(t + 0.001);
+        s0 = a; v0 = a.map((v, i) => (b[i] - v) / 0.001);
+        old.anim.cancel();
+      }
+      const kick = [p.x, p.y, p.r].map((v) => v * HOP_UNIT);
+      const f = (t) => [0, 1, 2].map((i) =>
+        hopFree(s0[i], v0[i], t) + (t > p.d ? hopFree(0, kick[i], t - p.d) : 0));
+      const frames = [];
+      for (let t = 0; t < HOP_MAX - 1e-9; t += HOP_DT) {
+        const [x, y, r] = f(t);
+        // Pivot fix: rotating about the origin swings the centre by (I−R)·arm.
+        const c = Math.cos(r * Math.PI / 180), sn = Math.sin(r * Math.PI / 180);
+        const fx = x + (ax - (ax * c - ay * sn)), fy = y + (ay - (ax * sn + ay * c));
+        frames.push({ translate: `${fx.toFixed(3)}px ${fy.toFixed(3)}px`, rotate: `${r.toFixed(3)}deg` });
+      }
+      frames.push({ translate: '0px 0px', rotate: '0deg' });
+      const anim = el.animate(frames, { duration: HOP_MAX * 1000, easing: 'linear' });
+      live.current.set(el, { anim, f });
+    }
+  }, [selected, reduce]);
+}
+/* ---- TAB DELIGHT END ---- */
+
+function FolderPreview({ items, selected }) {                 // TAB DELIGHT: + selected
   const img = (i, fallback) => (items[i] ? PRODUCTS[items[i]].img : fallback);
+  const fanRef = React.useRef(null);                           // TAB DELIGHT
+  useTabHop(fanRef, selected, useReducedMotion());             // TAB DELIGHT
   return (
-    <span className="mp-fan" aria-hidden>
+    <span className="mp-fan" aria-hidden ref={fanRef}>{/* TAB DELIGHT: ref */}
       <span className="mp-fan-card mp-fan-l"><span className="mp-fan-master"><img src={IMG(img(1, FAN_FILL[0]))} alt="" /></span></span>
       <span className="mp-fan-card mp-fan-r"><span className="mp-fan-master"><img src={IMG(img(2, FAN_FILL[1]))} alt="" /></span></span>
       <span className="mp-fan-card mp-fan-mid"><span className="mp-fan-master"><img src={IMG(img(0, FAN_FILL[0]))} alt="" /></span></span>
@@ -335,7 +427,7 @@ function liquidPath(a, b) {
    springs). Clipping it to the shape was tried: the neck swallowed almost all
    of it and it read as broken specks. */
 function LiquidTab({ a, b }) {
-  const d = useTransform([a, b], ([x, y]) => liquidPath(x, y));
+  const d = useTransform([a, b], ([x, y]) => liquidPath(x, y));   // a already includes the scroll pull
   const h = COLLECTIONS.length * RAIL_ROW_H + 2 * LIQ_R;
   return (
     <svg className="mp-liquid" aria-hidden="true" width="280" height={h} viewBox={`0 ${-LIQ_R} 280 ${h}`}>
@@ -343,11 +435,22 @@ function LiquidTab({ a, b }) {
     </svg>
   );
 }
+/* The page pours through the tab: while a chapter moves, its rail side leads
+   — a skew about its right edge, so the cards nearest the tab are dragged
+   ahead as if drawn through the neck, up to 3° (~46px across the grid) at full
+   speed — and it stretches a touch along the travel. Both come from the
+   chapter's own velocity, so they grow with speed, relax as it brakes, and
+   the trail spring's small overshoot swings them back through zero: the
+   jelly settle as it lands. */
+const LIQ_SKEW_PER = 1 / 1600, LIQ_SKEW_MAX = 3;
 function LiquidSection({ k, c, y, on }) {
   const opacity = useTransform(y, (v) => docOpacity(k, DOC_OFFS[k] + v));
+  const vy = useVelocity(y);
+  const skewY = useTransform(vy, (v) => Math.max(-LIQ_SKEW_MAX, Math.min(LIQ_SKEW_MAX, -v * LIQ_SKEW_PER)));
+  const scaleY = useTransform(vy, (v) => 1 + Math.min(0.04, Math.abs(v) / 120000));
   return (
-    <motion.div className="mp-doc-link" aria-hidden={!on}
-      style={{ top: DOC_OFFS[k], y, opacity, pointerEvents: on ? 'auto' : 'none' }}>
+    <motion.div className="mp-doc-link mp-liquid-sec" aria-hidden={!on}
+      style={{ top: DOC_OFFS[k], y, skewY, scaleY, opacity, pointerEvents: on ? 'auto' : 'none' }}>
       <DocHeading c={c} />
       {Array.from({ length: docRows(k) }, (_, r) => <div key={r} style={{ marginTop: r ? GAP : 0 }}><DocRow c={c} r={r} /></div>)}
     </motion.div>
@@ -555,6 +658,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      the rail runs — so `dir` feeds the same Slide axis a rail click would. */
   const stageRef = React.useRef(null);
   const frameRef = React.useRef(null);
+  // V4 · Liquid Tab: how far (in rows) an overscroll has pulled the tab.
+  const liquidPull = useMotionValue(0);
   const activeRef = React.useRef(0);
   React.useEffect(() => { activeRef.current = active; }, [active]);
 
@@ -586,8 +691,22 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       // exactly as a transition does — bring the fade in with it, scaled to how
       // far it has stretched. Without this the cards shear off mid-pull.
       wrap?.style.setProperty('--fade-pull', Math.min(12, Math.abs(v)).toFixed(1) + 'px');
+      // V4 · Liquid Tab: the tab is pulled toward the next row like honey —
+      // up to 0.42 of a row at the switch threshold, eased so it resists as
+      // it stretches; at the ends (nothing to switch to) only a small bulge.
+      if (style === 'liquid' && !reduce) {
+        const f = Math.min(1, Math.abs(acc) / OVERSCROLL);
+        // Only stop a running release. stop() on an idle value cut the
+        // useTransform subscriptions downstream: the tab froze after the
+        // first wheel event while the pull value kept climbing.
+        if (liquidPull.isAnimating()) liquidPull.stop();
+        liquidPull.set((cap === PULL ? 0.42 : 0.12) * (1 - (1 - f) * (1 - f)) * (down ? 1 : -1));
+      }
     };
     const release = () => {
+      // Liquid: let go and the stretched tab springs back — or, when the
+      // switch fired, hands over to the lead end that is already on its way.
+      if (style === 'liquid' && liquidPull.get() !== 0) animate(liquidPull, 0, LIQ_TRAIL);
       if (!wrap || wrap.style.getPropertyValue('--rubber') === '0px') return;
       wrap.setAttribute('data-release', '');
       wrap.style.setProperty('--rubber', '0px');
@@ -1251,12 +1370,19 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     if (reduce) { edgeA.set(active); edgeB.set(active); return; }
     // V4 · Liquid Tab draws the white tab itself from these two ends, on the
     // same springs that drive its page.
-    const a = animate(edgeA, active, style === 'liquid' ? LIQ_LEAD : NOTCH_LEAD);
+    // Liquid: a scroll flick's speed goes into the lead end (content px/s →
+    // rows/s, ~1000px of page per row), so a hard flick races the lead ahead
+    // and pulls a longer, thinner neck; a click stretches it gently.
+    const lv = style === 'liquid' && launchRef.current?.v ? -launchRef.current.v / 1000 : 0;
+    const a = animate(edgeA, active, style === 'liquid' ? { ...LIQ_LEAD, ...(lv ? { velocity: lv } : null) } : NOTCH_LEAD);
     const b = animate(edgeB, active, style === 'liquid' ? LIQ_TRAIL : NOTCH_TRAIL);
     return () => { a.stop(); b.stop(); };
   }, [active]);
-  const notchY = useTransform([edgeA, edgeB], ([a, b]) => `translateY(${(Math.min(a, b) * RAIL_ROW_H + NOTCH_TOP).toFixed(2)}px)`);
-  const notchH = useTransform([edgeA, edgeB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
+  /* V4 · Liquid Tab: the scroll pull (in rows) rides on the lead end, so the
+     tab starts stretching toward the next row while you're still scrolling. */
+  const leadEdge = useTransform([edgeA, liquidPull], ([a, p]) => a + p);
+  const notchY = useTransform([leadEdge, edgeB], ([a, b]) => `translateY(${(Math.min(a, b) * RAIL_ROW_H + NOTCH_TOP).toFixed(2)}px)`);
+  const notchH = useTransform([leadEdge, edgeB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
 
   return (
     <motion.div className="mp-frame" ref={frameRef}
@@ -1272,7 +1398,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             two inverted corners that tie it into the content area. It travels on
             the grid's spring so the rail and the cards read as one gesture.
             Full transform string — the x/y shorthands aren't accelerated. */}
-        {style === 'liquid' && <LiquidTab a={edgeA} b={edgeB} />}
+        {style === 'liquid' && <LiquidTab a={leadEdge} b={edgeB} />}
         <motion.span className="mp-sel" aria-hidden style={{ transform: railTransform, display: style === 'liquid' ? 'none' : undefined }}>
           <img className="mp-sel-corner mp-sel-corner-top" src={IMG('37a34.svg')} alt="" />
           <img className="mp-sel-corner mp-sel-corner-bot" src={IMG('37a34.svg')} alt="" />
@@ -1282,7 +1408,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           const on = i===active;
           return (
             <button key={c.id} className="mp-row" role="tab" aria-selected={on} tabIndex={on?0:-1} onClick={()=>select(i)}>
-              <FolderPreview items={c.items} />
+              <FolderPreview items={c.items} selected={on} />
               <span className="mp-meta">
                 <span className="mp-rowName">{c.name}</span>
                 <span className="mp-rowCount">{c.count} Items</span>

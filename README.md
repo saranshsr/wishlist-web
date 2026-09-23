@@ -2,15 +2,15 @@
 
 A recreation of the noon desktop wishlist page (Figma file `bGeam4dYWnlJLz0uJ91DdQ`,
 panel frame `419:535726`) with a live saved-items panel in the middle, built to
-review **six collection-switch transitions** side by side.
+review **five collection-switch transitions** side by side.
 
 The page chrome (top nav, category bar, list switcher, help band, footer) is
 static. Only the panel is interactive.
 
-## The six versions
+## The five versions
 
-Switch with the dark pill at the bottom of the page, the `1`–`6` keys, or
-`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=6`), so a link opens on
+Switch with the dark pill at the bottom of the page, the `1`–`5` keys, or
+`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=5`), so a link opens on
 a specific version.
 
 | | Version | What moves | Feel |
@@ -18,22 +18,21 @@ a specific version.
 | V1 | **Unfurl** | Vertical travel only. The grid slides 44px along the rail's direction and each row adds 20px of its own, staggered 55ms so the leading row settles first. No scale. | Content arriving along the rail |
 | V2 | **Deal** | The old cards gather into a tilted stack on the first slot, then the new ones are dealt out of it one by one. | Cards handled on a table |
 | V3 | **Carousel** | A vertical carousel, timed off the reference video frame by frame. The sections sit one after another on a track: the outgoing one slides up and shrinks to 0.75 as it leaves; the next, right behind it, slides up and grows to full size as it arrives, both on one curve and both scaling from their left edge so they stay aligned to the rail. It's one real track: the strip is the only thing that moves, so switching again mid-flight just redirects it and sections never land on top of each other — cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s. | Paging through a stack of sections |
-| V4 | **Liquid Tab** | The selected tab and its page are one white body. On a switch the tab stretches from its old row toward the new one, its left edge pinching into a liquid neck that stays joined to the page, then snaps shut. The page runs on the same two springs: the collection you leave is pulled away with the leading edge, the one you arrive at is drawn in with the trailing edge, so the page opens a gap exactly while the tab is stretched. Each collection carries its own heading. | Tab and page as one liquid body |
+| V4 | **Liquid Tab** | The selected tab and its page are one white body. On a switch the tab stretches from its old row toward the new one, its left edge pinching into a liquid neck that stays joined to the page, then snaps shut. The page runs on the same two springs: the collection you leave is pulled away with the leading edge, the one you arrive at is drawn in with the trailing edge, so the page opens a gap exactly while the tab is stretched. Scroll pulls it like honey: overscrolling already stretches the tab toward the next row (let go and it springs back), and a flick's speed goes into the stretch. While a collection moves, its rail side leads — the page pours through the tab — and it relaxes with a small jelly settle. Each collection carries its own heading. | Tab and page as one liquid body |
 | V5 | **Spring Chain** | Every heading and row is a link in one physical chain (simulated per frame), pulled from the front of the collection you're leaving. The links behind hang back in proportion to speed, so the gaps open as it sets off, then gently bunch up as it brakes and settle — stretch, then compress. Slack is capped so nothing ever touches. Each collection carries its own heading. | The page travelling as one physical body |
-| V6 | **Word Morph** | The heading morphs letter by letter: the letters both names share (in order) slide to their new places on one spring, the rest dissolve out and resolve in, blurred to sharp. The grid does the same at card scale — a card with the same product photo in both collections glides to its new slot, the others dissolve where they stand. | One word becoming another |
 
 V2 and V3 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would
 collide otherwise. V2's grid always fits, so it never clips or fades at the
 edges.
 
-Common to all six:
+Common to all five:
 - **Live link:** https://wishlist-web-ivory.vercel.app — every push to `main` redeploys it.
 - **Scroll switches collections**, anywhere over the panel (rail included). One flick is one switch; a second flick — even while the first one's trackpad momentum is still running — or a flick back the other way is read straight away. The grid stretches with a rubber band before switching; V1 and V3 also carry your scroll speed into the transition.
 - **The heading changes with the version.** In V1 and V3 it blur-morphs: the old folder name dissolves into a blur while the new one sharpens out of it, in the same spot. V2 has no blur anywhere, so there the new name is dealt in letter by letter, left to right in the order the cards are dealt, each letter settling down from just above — no tilt.
 - **Edge softening is minimal.** Where cards cross the top or bottom edge mid-switch (V1, V3) there's only a 14px fade and a 1.5px blur, so they don't shear but it doesn't read as an effect. It dissolves over ~0.5s as the cards settle rather than switching off.
 - **The blue marker stretches, then contracts.** Its leading end races to the new folder so it spans both rows; its trailing end catches up as the switch settles, shrinking it back to size.
-- **Hovering a folder opens its card stack** slightly.
+- **Hovering a folder opens its card stack** slightly, and **selecting one makes its cards hop** — the front card lifts and tips, the back two follow 40ms later, and they land with a small dip (click, keyboard or scroll). Pressing a tab squeezes its cards to 0.96.
 - **No one-frame blinks.** Every fading element is driven by Motion itself rather than the browser's animation engine, which briefly dropped cards to 0 opacity as their fade finished.
 - `prefers-reduced-motion` is respected throughout — gentler, not removed.
 

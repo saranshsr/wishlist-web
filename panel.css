@@ -274,3 +274,21 @@ html[data-edge-off] .mp-edge{display:none}
 .mp-title-morph{position:relative}
 .mp-morph-ch{position:absolute;left:0;top:0;white-space:pre}
 .mp-morph-sizer{visibility:hidden}
+/* Liquid pour: the skew pivots on the chapter's right edge, so the side by
+   the tab leads. */
+.mp-liquid-sec{transform-origin:100% 50%}
+
+/* ---- TAB DELIGHT CSS ---- */
+/* Press: the folder gives under the pointer (whole fan, one object) and pops
+   back on release as the hop takes off. `scale` is its own property, so it
+   stacks on the cards' hover transforms and the hop's translate/rotate
+   without touching either. Quick in, springy out — the asymmetry is what
+   makes it feel pressed rather than animated. Unselected rows only: pressing
+   the open tab does nothing, so it shouldn't pretend to. */
+.mp-fan{transition:scale 380ms cubic-bezier(.34,1.56,.64,1)}
+.mp-row:not([aria-selected="true"]):active .mp-fan{scale:.96;transition:scale 90ms cubic-bezier(.23,1,.32,1)}
+@media (prefers-reduced-motion: reduce){
+  .mp-fan{transition:none}
+  .mp-row:not([aria-selected="true"]):active .mp-fan{scale:none}
+}
+/* ---- END TAB DELIGHT CSS ---- */
