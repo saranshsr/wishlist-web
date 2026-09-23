@@ -124,13 +124,16 @@ const HOP_UNIT = (() => {
   return 1 / hopFree(0, 1, tp);
 })();
 
-function useTabHop(fanRef, selected, reduce) {
+function useTabHop(fanRef, selected, reduce, quiet) {
   const prev = React.useRef(selected);
   const live = React.useRef(new Map());   // card el -> { anim, f(t) -> [x,y,r] }
   React.useEffect(() => {
     const was = prev.current; prev.current = selected;
     const fan = fanRef.current;
     if (was === selected || !fan) return;           // mount, or no change
+    // Scroll switches stay still (Saransh: hop on selection, not while
+    // scrolling); quiet is true when the switch came from the wheel.
+    if (quiet && quiet()) return;
     if (reduce) {
       // No movement: the new folder just brightens in.
       if (selected) fan.animate([{ opacity: 0.55 }, { opacity: 1 }], { duration: 220, easing: 'cubic-bezier(.23,1,.32,1)' });
@@ -167,10 +170,10 @@ function useTabHop(fanRef, selected, reduce) {
 }
 /* ---- TAB DELIGHT END ---- */
 
-function FolderPreview({ items, selected }) {                 // TAB DELIGHT: + selected
+function FolderPreview({ items, selected, quiet }) {                 // TAB DELIGHT: + selected
   const img = (i, fallback) => (items[i] ? PRODUCTS[items[i]].img : fallback);
   const fanRef = React.useRef(null);                           // TAB DELIGHT
-  useTabHop(fanRef, selected, useReducedMotion());             // TAB DELIGHT
+  useTabHop(fanRef, selected, useReducedMotion(), quiet);             // TAB DELIGHT
   return (
     <span className="mp-fan" aria-hidden ref={fanRef}>{/* TAB DELIGHT: ref */}
       <span className="mp-fan-card mp-fan-l"><span className="mp-fan-master"><img src={IMG(img(1, FAN_FILL[0]))} alt="" /></span></span>
@@ -1342,11 +1345,14 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     const band = (acc, down, cap = PULL) => {
       const v = Math.min(cap, Math.abs(acc) * 0.28) * (down ? -1 : 1);
       wrap?.removeAttribute('data-release');
-      wrap?.style.setProperty('--rubber', v.toFixed(1) + 'px');
+      // No content movement on overscroll (Saransh: cards and labels shouldn't
+      // nudge while scrolling). The band still exists as a value for the
+      // liquid tab's pull; the page itself stays put.
+      wrap?.style.setProperty('--rubber', '0px');
       // A pull displaces the content past the stage edge, so it clips there
       // exactly as a transition does — bring the fade in with it, scaled to how
       // far it has stretched. Without this the cards shear off mid-pull.
-      wrap?.style.setProperty('--fade-pull', Math.min(12, Math.abs(v)).toFixed(1) + 'px');
+      wrap?.style.setProperty('--fade-pull', '0px');
       // V4 · Liquid Tab: the tab is pulled toward the next row like honey —
       // up to 0.42 of a row at the switch threshold, eased so it resists as
       // it stretches; at the ends (nothing to switch to) only a small bulge.
@@ -2092,7 +2098,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           const on = i===active;
           return (
             <button key={c.id} className="mp-row" role="tab" aria-selected={on} tabIndex={on?0:-1} onClick={()=>select(i)}>
-              <FolderPreview items={c.items} selected={on} />
+              <FolderPreview items={c.items} selected={on} quiet={() => !!launchRef.current} />
               <span className="mp-meta">
                 <span className="mp-rowName">{c.name}</span>
                 <span className="mp-rowCount">{c.count} Items</span>
