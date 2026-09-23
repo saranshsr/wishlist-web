@@ -292,3 +292,10 @@ html[data-edge-off] .mp-edge{display:none}
   .mp-row:not([aria-selected="true"]):active .mp-fan{scale:none}
 }
 /* ---- END TAB DELIGHT CSS ---- */
+
+/* V6 · Origami — the sheet and its strips. Perspective from the top edge,
+   where the packet folds to; each strip is a window onto the full page. */
+.mp-fold{position:relative;perspective:1800px;perspective-origin:50% 0}
+.mp-fold-strip{position:absolute;left:0;right:0;overflow:hidden;background:#fff;transform-origin:50% 0;backface-visibility:hidden;will-change:transform}
+.mp-fold-inner{position:absolute;left:0;right:0;top:0}
+.mp-fold-shade{position:absolute;inset:0;background:#101628;pointer-events:none}

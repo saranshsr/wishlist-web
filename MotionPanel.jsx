@@ -48,7 +48,7 @@ const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PI
 /* Card-table styles: the grid always fits the stage, so it never scrolls and
    nothing needs the edge fade. Their cards tilt, stack and turn past the grid's
    edges, so the stage stops clipping for them (data-open) — no mask, no blur. */
-const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss']);
+const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
 const TRACK_GAP = 48, TRACK_SCALE = 0.75;   // V3 · Carousel (measured)
@@ -630,6 +630,71 @@ function TitleMorph({ name, reduce }) {
 const morphIds = (items) => { const seen = {}; return items.map((k) => { const im = PRODUCTS[k].img; seen[im] = (seen[im] || 0) + 1; return `${im}#${seen[im]}`; }); };
 /* ==== end V7 ==== */
 
+/* ==== V6 · Origami ====
+   The page is one sheet of paper — heading and cards together. A switch
+   folds it up like an accordion: the sheet is cut into ~260px strips, every
+   other crease tipping toward you and away, the faces tilting out of the
+   light shading darker, until the whole page is a thin folded packet at the
+   top. At that instant — edge-on, invisible — the new collection is printed on
+   the same sheet, and it unfolds back down on a spring with enough give that
+   the paper overshoots flat and flexes back once before it settles.
+   All of it is one number, the fold angle θ: each strip's position, depth,
+   tilt and shade derive from it, so a switch mid-fold just re-targets θ —
+   folding from wherever the sheet is — and the sheet can never tear. */
+const FOLD_H = 260, FOLD_MAX = 84;
+const foldGeom = (k) => { const total = DOC_HEAD + sectionH(COLLECTIONS[k].items.length); const S = Math.max(1, Math.round(total / FOLD_H)); return { total, S, H: total / S }; };
+function FoldStrip({ c, k, j, S, H, theta }) {
+  const odd = j % 2 === 1;
+  const transform = useTransform(theta, (t) => {
+    const r = t * Math.PI / 180;
+    // Creases fold AWAY from the viewer (even strips tip back, odd ones come
+    // forward from that depth), so perspective shrinks the packet toward the
+    // vanishing point instead of swelling it over the rail.
+    return `translateY(${(j * H * Math.cos(r) - j * H).toFixed(2)}px) translateZ(${(odd ? -H * Math.sin(r) : 0).toFixed(2)}px) rotateX(${(odd ? t : -t).toFixed(3)}deg)`;
+  });
+  // Faces turning away from the light darken; the ones facing it barely.
+  const shade = useTransform(theta, (t) => Math.abs(Math.sin(t * Math.PI / 180)) * (odd ? 0.32 : 0.1));
+  return (
+    <motion.div className="mp-fold-strip" style={{ top: j * H, height: H, transform }}>
+      <div className="mp-fold-inner" style={{ transform: `translateY(${-j * H}px)` }}>
+        <DocHeading c={c} />
+        {Array.from({ length: docRows(k) }, (_, r) => <div key={r} style={{ marginTop: r ? GAP : 0 }}><DocRow c={c} r={r} /></div>)}
+      </div>
+      <motion.div className="mp-fold-shade" style={{ opacity: shade }} />
+    </motion.div>
+  );
+}
+function OrigamiTrack({ active, reduce, launch, onSettle }) {
+  const [shown, setShown] = useState(active);
+  const theta = useMotionValue(0);
+  const token = React.useRef(0);
+  React.useEffect(() => {
+    if (active === shown && theta.get() === 0) return;
+    const my = ++token.current;
+    if (reduce) { setShown(active); theta.set(0); onSettle(); return; }
+    const flick = !!launch.current?.v;           // a scroll flick folds faster
+    (async () => {
+      // Folded to 84°, not 90: a thin packet of paper stays in view while the
+      // new collection is printed on it (at 90° it vanished for a frame).
+      const left = (FOLD_MAX - theta.get()) / FOLD_MAX;
+      if (left > 0.01) await animate(theta, FOLD_MAX, { duration: Math.max(0.08, (flick ? 0.22 : 0.3) * left), ease: [0.5, 0, 0.9, 0.5] });
+      if (my !== token.current) return;
+      setShown(active);
+      // From rest: inheriting the fold's closing speed drove θ past 90° (to
+      // 109°) and the strips turned their backs — the page blanked for 100ms.
+      await animate(theta, 0, { type: 'spring', visualDuration: 0.55, bounce: 0.3, velocity: 0 });
+      if (my === token.current) onSettle();
+    })();
+  }, [active]);
+  const g = foldGeom(shown), c = COLLECTIONS[shown];
+  return (
+    <div className="mp-fold" style={{ height: g.total }}>
+      {Array.from({ length: g.S }, (_, j) => <FoldStrip key={`${shown}-${j}`} c={c} k={shown} j={j} S={g.S} H={g.H} theta={theta} />)}
+    </div>
+  );
+}
+/* ==== end V6 ==== */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -866,7 +931,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
     // one, and it is short so the band can't outlive the movement.
-    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain') ? 950 : style === 'wordmorph' ? 620 : 340);
+    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack' || style === 'liquid' || style === 'chain' || style === 'origami') ? 1100 : style === 'wordmorph' ? 620 : 340);
     return () => clearTimeout(t);
   }, [active]);
 
@@ -1419,7 +1484,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       </nav>
 
       {/* content */}
-      <div className="mp-content" data-doc={(style === 'liquid' || style === 'chain') ? '' : undefined}>
+      <div className="mp-content" data-doc={(style === 'liquid' || style === 'chain' || style === 'origami') ? '' : undefined}>
         <div className="mp-header">
           <div className="mp-title-wrap">
             {/* Always popLayout: the blur morph needs the old and new names
@@ -1476,7 +1541,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           data-stack={style === 'stack' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {style === 'liquid' ? (
+        {style === 'origami' ? (
+          <OrigamiTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
+        ) : style === 'liquid' ? (
           <LiquidTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : style === 'chain' ? (
           <ChainTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
