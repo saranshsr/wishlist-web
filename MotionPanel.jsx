@@ -401,8 +401,14 @@ function DocRow({ c, r }) {
    you're arriving at comes with the trail (it's drawn in behind), so the page
    opens a gap exactly while the tab is stretched and closes it as the tab
    snaps shut — one body, one motion. */
-const LIQ_LEAD  = { type:'spring', stiffness:560, damping:46 };   // ζ ≈ 0.97, races ahead
-const LIQ_TRAIL = { type:'spring', stiffness:170, damping:23 };   // ζ ≈ 0.88, the give (≈6px settle)
+/* No bounce (Saransh, 24 Sep): both ends ride V3's curve,
+   cubic-bezier(0.3, 0.05, 0.05, 1) — soft start, long glide, no overshoot —
+   the lead over 0.62s and the trail over the full 0.9s, so the tab still
+   stretches (the lead gets there first) and closes as the trail arrives. */
+const LIQ_CURVE = [0.3, 0.05, 0.05, 1];
+const LIQ_LEAD  = { duration:0.62, ease:LIQ_CURVE };
+const LIQ_TRAIL = { duration:0.9,  ease:LIQ_CURVE };
+const LIQ_RELEASE = { duration:0.34, ease:[0.23, 1, 0.32, 1] };   // scroll pull letting go
 const LIQ_R = 20;                                                 // the inverted corners
 /* The tab outline for ends a/b (row indices). At rest it is exactly .mp-sel —
    a 280×96 row with the two inverted corners into the page. Stretched, each
@@ -463,12 +469,10 @@ function LiquidTrack({ active, reduce, launch, onSettle }) {
     const T = -DOC_OFFS[active], dir = Math.sign(active - from.current);
     from.current = active;
     if (reduce || !dir) { ys.forEach((y) => y.set(T)); onSettle(); return; }
-    const v = launch.current?.v;
     // Chapters on the side you're leaving ride the lead; the target and what's
     // beyond it ride the trail. Decided per switch from where they are now,
     // so a reversal mid-flight re-assigns without a jump.
-    const anims = ys.map((y, k) => animate(y, T, {
-      ...((k - active) * dir < 0 ? LIQ_LEAD : LIQ_TRAIL), ...(v ? { velocity: v } : null) }));
+    const anims = ys.map((y, k) => animate(y, T, (k - active) * dir < 0 ? LIQ_LEAD : LIQ_TRAIL));
     const t = setTimeout(onSettle, 520);
     return () => { anims.forEach((x) => x.stop()); clearTimeout(t); };
   }, [active]);
@@ -1033,7 +1037,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     const release = () => {
       // Liquid: let go and the stretched tab springs back — or, when the
       // switch fired, hands over to the lead end that is already on its way.
-      if (style === 'liquid' && liquidPull.get() !== 0) animate(liquidPull, 0, LIQ_TRAIL);
+      if (style === 'liquid' && liquidPull.get() !== 0) animate(liquidPull, 0, LIQ_RELEASE);
       if (!wrap || wrap.style.getPropertyValue('--rubber') === '0px') return;
       wrap.setAttribute('data-release', '');
       wrap.style.setProperty('--rubber', '0px');
@@ -1626,6 +1630,35 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     };
   };
 
+  /* V6 · Depth — Apple-style spatial crossfade between sibling views (the way
+     visionOS and iOS move between peers): the page you leave recedes into
+     the screen — eases to 0.97, softly blurs and fades — while the new one
+     arrives from just in front of the glass, settling from 1.035 to exact
+     size as it rises 36px along the rail's direction and sharpens from a
+     blur. Its rows land 35ms apart. One critically damped spring (no bounce)
+     carries the scroll's speed. The exit is a plain object (direction-free):
+     a function-of-d exit never completes under popLayout on rapid switches. */
+  const DEPTH_SPRING = { type:'spring', visualDuration:0.55, bounce:0 };
+  const depthV2 = {
+    enter:(d)=>({ opacity:0, y: reduce ? 0 : 36 * d, scale: reduce ? 1 : 1.035, filter: reduce ? 'blur(0px)' : 'blur(8px)' }),
+    center:{ opacity:1, y:0, scale:1, filter:'blur(0px)', transition:{
+      y:{ ...DEPTH_SPRING, ...(launchRef.current ? { velocity: launchRef.current.v * 36 / 44 } : null) },
+      scale:DEPTH_SPRING,
+      opacity:{ duration:0.3, ease:EASE_OUT, delay:0.05 },
+      filter:{ duration:0.42, ease:EASE_OUT, delay:0.02 } } },
+    exit:{ opacity:0, scale: reduce ? 1 : 0.97, filter: reduce ? 'blur(0px)' : 'blur(6px)',
+      transition:{ duration:0.3, ease:EASE_OUT } },
+  };
+  const depthRowV = (i, n) => {
+    const rows = Math.ceil(n / COLS), row = Math.floor(i / COLS);
+    const delay = reduce ? 0 : (dir > 0 ? row : rows - 1 - row) * 0.035;
+    return reduce ? { enter:{}, center:{} } : {
+      enter:{ y: 10 * dir },
+      center:{ y:0, transition:{ y:{ ...DEPTH_SPRING, delay } } },
+      exit:{ transition:{ duration:0 } },
+    };
+  };
+
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -1637,6 +1670,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   /* Per-style grid + card choreography for the staggered family. */
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
+    depth2:     { grid: depthV2,     cardFor: (i, n) => depthRowV(i, n),       delay: () => 0 },
     parallax:   { grid: parallaxV,   card: cardV,       delay: (i, n) => rowDelay(i, n) },
     slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
     focus:      { grid: focusV,        card: null,           delay: () => 0 },
@@ -1662,7 +1696,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'signature' || style === 'layered' || style === 'wave' || style === 'tray' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'signature' || style === 'depth2' || style === 'layered' || style === 'wave' || style === 'tray' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -1699,11 +1733,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     if (reduce) { edgeA.set(active); edgeB.set(active); return; }
     // V4 · Liquid Tab draws the white tab itself from these two ends, on the
     // same springs that drive its page.
-    // Liquid: a scroll flick's speed goes into the lead end (content px/s →
-    // rows/s, ~1000px of page per row), so a hard flick races the lead ahead
-    // and pulls a longer, thinner neck; a click stretches it gently.
-    const lv = style === 'liquid' && launchRef.current?.v ? -launchRef.current.v / 1000 : 0;
-    const a = animate(edgeA, active, style === 'liquid' ? { ...LIQ_LEAD, ...(lv ? { velocity: lv } : null) } : NOTCH_LEAD);
+    const a = animate(edgeA, active, style === 'liquid' ? LIQ_LEAD : NOTCH_LEAD);
     const b = animate(edgeB, active, style === 'liquid' ? LIQ_TRAIL : NOTCH_TRAIL);
     return () => { a.stop(); b.stop(); };
   }, [active]);
@@ -1889,7 +1919,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
               <motion.div key={col.id} className="mp-grid" custom={dir} onUpdate={JS_DRIVEN}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
-                style={(style === 'slideDepth' || style === 'push' || style === 'parallax') ? { transformOrigin: `50% ${stageMid}px` }
+                style={(style === 'slideDepth' || style === 'push' || style === 'parallax' || style === 'depth2') ? { transformOrigin: `50% ${stageMid}px` }
                      : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> (unfurl && per.cardFor) ? (
