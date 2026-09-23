@@ -43,6 +43,7 @@ const COLLECTIONS = [
 /* geometry for folder-origin math */
 const COLS=4, CARD_W=205, CARD_H=484, GAP=20, ROW_PITCH=CARD_H+GAP;
 const RAIL_ROW_H=96, THUMB_CX=48, GRID_LEFT=300, GRID_TOP=72;
+const RAIL_MIN_H = 400;   // V6 · Tray: the panel never gets shorter than the rail needs
 const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PITCH+CARD_H/2];
 /* Card-table styles: the grid always fits the stage, so it never scrolls and
    nothing needs the edge fade. Their cards tilt, stack and turn past the grid's
@@ -51,7 +52,15 @@ const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
 const TRACK_GAP = 48, TRACK_SCALE = 0.75;   // V3 · Carousel (measured)
-const SPRING = { type:'spring', stiffness:320, damping:28 };   // motion-lab slide
+const SPRING = { type:'spring', stiffness:320, damping:28 };
+/* JS_DRIVEN — pass as onUpdate to any element whose opacity animates.
+   Motion hands opacity/filter/transform to the browser's WAAPI when it can;
+   when that animation finishes it is removed a frame before Motion writes the
+   final value, so for one frame the element falls back to its initial inline
+   style — opacity 0. Measured: every entering card in V2/V4–V6 blinked out
+   for one frame at the end of its fade. Any onUpdate handler makes Motion
+   drive the element itself, which commits every frame: no blink. */
+const JS_DRIVEN = () => {};   // motion-lab slide
 const MORPH  = { type:'spring', stiffness:280, damping:30 };   // layoutId travel
 const BLOOM  = { type:'spring', stiffness:300, damping:26 };
 const EASE_OUT = [0.23, 1, 0.32, 1];
@@ -79,30 +88,35 @@ function FolderPreview({ items }) {
   );
 }
 
-function CardInner({ p }) {
-  const Img = 'img';
-  const Bottom = 'div';
+/* `parts` (V4 · Layered only): variants for the photo, the text block and the
+   buttons, so a card can arrive in layers — photo drifting inside its frame,
+   then name/price, then the actions. They inherit the cell's enter/center
+   labels through variant propagation; without `parts` the card is static. */
+function CardInner({ p, parts }) {
+  const Img = parts ? motion.img : 'img';
+  const Info = parts ? motion.div : 'div';
+  const Acts = parts ? motion.div : 'div';
   return (
     <div className="mp-card">
       <div className="mp-top">
-        <Img className="mp-photo" data-fit={p.fit} src={IMG(p.img)} alt="" />
+        <Img className="mp-photo" data-fit={p.fit} src={IMG(p.img)} alt="" {...(parts ? { variants: parts.photo, onUpdate: JS_DRIVEN } : null)} />
         <div className="mp-pager"><i className="on"/><i/><i className="sm"/><i className="xs"/></div>
         <div className="mp-kebab"><img src={IMG('73447.svg')} alt=""/></div>
       </div>
-      <Bottom className="mp-bottom">
-        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+      <div className="mp-bottom">
+        <Info style={{display:'flex',flexDirection:'column',gap:6}} {...(parts ? { variants: parts.info, onUpdate: JS_DRIVEN } : null)}>
           <div style={{display:'flex',flexDirection:'column',gap:4}}>
             <p className="mp-name">{p.name}</p>
             <span className="mp-rating"><img src={IMG('1a53e.svg')} alt=""/><b>4.3</b><em>(128)</em></span>
           </div>
           <div className="mp-price"><span className="mp-sell" data-ligatures="on">{'dhm'+p.sell}</span><span className="mp-listed">{p.list}</span><span className="mp-disc">33%</span></div>
           <img className="mp-eta" src={IMG('97c5c.svg')} alt="Express, today"/>
-        </div>
-        <div className="mp-actions">
+        </Info>
+        <Acts className="mp-actions" {...(parts ? { variants: parts.cta, onUpdate: JS_DRIVEN } : null)}>
           <span className="mp-btnP"><img src={IMG('d85fd.svg')} alt=""/>Add to cart</span>
           <span className="mp-btnI"><img src={IMG('7394a.svg')} alt=""/></span>
-        </div>
-      </Bottom>
+        </Acts>
+      </div>
     </div>
   );
 }
@@ -817,6 +831,97 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       y:{ duration:0.34, ease:EASE_OUT }, scale:{ duration:0.34, ease:EASE_OUT }, opacity:{ duration:0.2, ease:EASE_OUT } } }),
   };
 
+  /* ---- V4–V6: three directions from the 24 Sep benchmark ----
+     Shared: the whole grid (not each card) owns the exit, as a function of
+     `d`, so exits always get the new direction; cards own only their entrance,
+     built from the current render's `dir`. Card stagger scales with the count
+     so 7 cards and 2 cards finish together: min(40ms, 180ms/(n-1)). */
+  const cardStep = (n) => (n > 1 ? Math.min(0.04, 0.18 / (n - 1)) : 0);
+  const SETTLE = { type:'spring', visualDuration:0.45, bounce:0 };
+  const still = { opacity:0, transition:{ duration:0.2 } };
+
+  /* V4 · Layered Fade-Through — Material's fade-through with Family's
+     direction and GOAT's in-card parallax. The old grid leaves quietly as one
+     piece (Krehel: exits quieter than entrances): fades and eases to 0.985
+     in 180ms, without moving. The new cards arrive in reading order
+     along the rail's direction, rising 28px; inside each, the photo drifts
+     18px and settles from 1.04 a beat behind its frame, the text follows 40ms
+     later, the buttons 80ms later — one card arriving in three layers. */
+  const layeredGridV = {
+    enter:{ opacity:1 }, center:{ opacity:1 },
+    // Plain object on purpose: a function-of-d exit under popLayout never
+    // completed when switches overlapped (rapid clicks left three grids
+    // mounted). No lift either — the quieter exit is the point.
+    exit:{ opacity:0, scale: reduce ? 1 : 0.985, transition:{ duration:0.18, ease:EASE_OUT } },
+  };
+  const layeredCardV = (i, n) => {
+    const rank = dir > 0 ? i : n - 1 - i, delay = 0.05 + rank * cardStep(n);
+    if (reduce) return { enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2, delay } } };
+    return {
+      enter:{ y: 28 * dir, opacity:0 },
+      center:{ y:0, opacity:1, transition:{ y:{ ...SETTLE, delay }, opacity:{ duration:0.2, ease:EASE_OUT, delay } } },
+      // An explicit no-op exit: without one, a card interrupted mid-entrance
+      // (rapid switching) never reported its exit done and its grid stayed
+      // mounted. The grid's own exit does the fading.
+      exit:{ transition:{ duration:0 } },
+    };
+  };
+  const layeredParts = (i, n) => {
+    if (reduce) return null;
+    const rank = dir > 0 ? i : n - 1 - i, delay = 0.05 + rank * cardStep(n);
+    return {
+      photo:{ enter:{ y: 18 * dir, scale:1.04 },
+              center:{ y:0, scale:1, transition:{ type:'spring', visualDuration:0.55, bounce:0, delay } }, exit:{ transition:{ duration:0 } } },
+      info: { enter:{ y: 8 * dir, opacity:0 },
+              center:{ y:0, opacity:1, transition:{ y:{ ...SETTLE, delay: delay + 0.04 }, opacity:{ duration:0.2, ease:EASE_OUT, delay: delay + 0.04 } } }, exit:{ transition:{ duration:0 } } },
+      cta:  { enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.22, ease:EASE_OUT, delay: delay + 0.08 } }, exit:{ transition:{ duration:0 } } },
+    };
+  };
+
+  /* V5 · Proximity Wave — a distance-based stagger (GSAP/Motion "from" grid
+     stagger) whose origin is the tab you clicked: each card waits in
+     proportion to its distance from that tab's centre (up to 220ms across the
+     grid), so the collection arrives as a wave spreading out from the rail.
+     Cards rise 16px and grow from 0.95 in place — nothing travels toward the
+     rail. The old grid fades out all together in 120ms. */
+  const waveGridV = {
+    enter:{ opacity:1 }, center:{ opacity:1 },
+    exit:{ opacity:0, transition:{ duration:0.12, ease:EASE_OUT } },
+  };
+  const waveCardV = (i) => {
+    // Measured from the nearest card, so the first card moves at once (the
+    // grid starts ~250px from the rail — raw distance left a blank beat).
+    const [ax, ay] = folderAnchor(active);
+    const dist = (k) => { const [cx, cy] = cardCentre(k); return Math.hypot(cx - ax, cy - ay); };
+    const n = COLLECTIONS[active].items.length;
+    const dmin = Math.min(...Array.from({ length: n }, (_, k) => dist(k)));
+    const delay = 0.04 + Math.min(0.22, (dist(i) - dmin) / 1000 * 0.3);
+    if (reduce) return { enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2, delay } } };
+    return {
+      enter:{ y: 16 * dir, scale:0.95, opacity:0 },
+      center:{ y:0, scale:1, opacity:1, transition:{
+        default:{ type:'spring', visualDuration:0.5, bounce:0.1, delay },
+        opacity:{ duration:0.25, ease:EASE_OUT, delay } } },
+    };
+  };
+
+  /* V6 · Breathing Tray — Family's trays: the panel itself changes height to
+     fit the collection (it IS the tray), so 7 cards → 1 visibly exhales and
+     1 → 7 inhales, on one spring with a faint settle (bounce 0.12). The old
+     cards step out in reverse reading order (20ms apart: fade + 0.97); the new
+     ones step in, in order, from 60ms. Exit is per card but plain — it
+     depends only on the card's own index. */
+  const trayGridV = { enter:{ opacity:1 }, center:{ opacity:1 }, exit:{ opacity:1, transition:{ duration:0.26 } } };
+  const trayCardV = (i, n) => {
+    const delay = 0.06 + i * cardStep(n);
+    if (reduce) return { enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2, delay } }, exit:{ opacity:0, transition:{ duration:0.14 } } };
+    return {
+      enter:{ opacity:0, scale:0.97, y: 8 * dir },
+      center:{ opacity:1, scale:1, y:0, transition:{ default:{ ...SETTLE, delay }, opacity:{ duration:0.22, ease:EASE_OUT, delay } } },
+      exit:{ opacity:0, scale:0.97, transition:{ duration:0.14, ease:EASE_OUT, delay: (n - 1 - i) * 0.02 } },
+    };
+  };
+
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -834,6 +939,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
     push:       { grid: pushV,         card: cardV,          delay: (i, n) => rowDelay(i, n) },
     deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n),           delay: () => 0 },
+    layered:    { grid: layeredGridV,  cardFor: (i, n) => layeredCardV(i, n), partsFor: (i, n) => layeredParts(i, n), delay: () => 0 },
+    wave:       { grid: waveGridV,     cardFor: (i) => waveCardV(i),             delay: () => 0 },
+    tray:       { grid: trayGridV,     cardFor: (i, n) => trayCardV(i, n),       delay: () => 0 },
     ribbon:     { grid: holdV,         cardFor: (i, n) => ribbonV(i, n),         delay: () => 0 },
     flip:       { grid: holdV,         cardFor: (i) => flipV(i),                 delay: () => 0 },
     toss:       { grid: holdV,         cardFor: (i, n) => tossV(i, n),           delay: () => 0 },
@@ -850,7 +958,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'signature' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'signature' || style === 'layered' || style === 'wave' || style === 'tray' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -893,7 +1001,12 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const notchH = useTransform([edgeA, edgeB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
 
   return (
-    <div className="mp-frame" ref={frameRef}>
+    <motion.div className="mp-frame" ref={frameRef}
+      /* V6 · Breathing Tray: the panel is the tray — its height follows the
+         collection (header + rows + padding), on one spring. */
+      initial={false}
+      animate={style === 'tray' ? { height: Math.max(RAIL_MIN_H, GRID_TOP + sectionH(col.items.length) + 20) } : undefined}
+      transition={{ height: reduce ? { duration:0 } : { type:'spring', visualDuration:0.5, bounce:0.12 } }}>
       {/* rail */}
       <LayoutGroup>
       <nav className="mp-rail" role="tablist">
@@ -935,16 +1048,16 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                    settling down from 5px above — no tilt, no bounce — while
                    the old name simply fades. Letters are aria-hidden; the h1 carries the name. */
                 <motion.h1 key={col.id} className="mp-title" aria-label={col.name}
-                  variants={dealTitleV} initial="enter" animate="center" exit="exit">
+                  variants={dealTitleV} initial="enter" animate="center" exit="exit" onUpdate={JS_DRIVEN}>
                   {[...col.name].map((ch, i) => (
-                    <motion.span key={i} className="mp-title-ch" aria-hidden="true" variants={dealCharV(i)}>
+                    <motion.span key={i} className="mp-title-ch" aria-hidden="true" variants={dealCharV(i)} onUpdate={JS_DRIVEN}>
                       {ch === ' ' ? '\u00a0' : ch}
                     </motion.span>
                   ))}
                 </motion.h1>
               ) : (
                 <motion.h1 key={col.id} className="mp-title" custom={dir}
-                  variants={titleV} initial="enter" animate="center" exit="exit">{col.name}</motion.h1>
+                  variants={titleV} initial="enter" animate="center" exit="exit" onUpdate={JS_DRIVEN}>{col.name}</motion.h1>
               )}
             </AnimatePresence>
           </div>
@@ -1035,19 +1148,19 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
         ) : (
           <div className="mp-grid-wrap">
             <AnimatePresence mode={gridMode} custom={dir} initial={false}>
-              <motion.div key={col.id} className="mp-grid" custom={dir}
+              <motion.div key={col.id} className="mp-grid" custom={dir} onUpdate={JS_DRIVEN}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
                 style={(style === 'slideDepth' || style === 'push' || style === 'parallax') ? { transformOrigin: `50% ${stageMid}px` }
                      : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> (unfurl && per.cardFor) ? (
-                  <motion.div key={i} className="mp-cell" variants={per.cardFor(i, col.items.length)}
+                  <motion.div key={i} className="mp-cell" variants={per.cardFor(i, col.items.length)} onUpdate={JS_DRIVEN}
                     style={{ position:'relative', zIndex: col.items.length - i }}>
-                    <CardInner p={PRODUCTS[key]} />
+                    <CardInner p={PRODUCTS[key]} parts={per.partsFor ? per.partsFor(i, col.items.length) : undefined} />
                   </motion.div>
                 ) : (unfurl && per.card) ? (
-                  <motion.div key={i} className="mp-cell" variants={per.card}
+                  <motion.div key={i} className="mp-cell" variants={per.card} onUpdate={JS_DRIVEN}
                     custom={{ d: dir, delay: per.delay(i, col.items.length) }}>
                     <CardInner p={PRODUCTS[key]} />
                   </motion.div>
@@ -1067,6 +1180,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
         </div>
       </div>
       </LayoutGroup>
-    </div>
+    </motion.div>
   );
 }

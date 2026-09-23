@@ -78,7 +78,9 @@
   .create img{width:20px;height:20px}
 
   .panelwrap{width:1200px;margin:0 auto}
-  #panel{width:1200px;height:1080px}
+  /* Height comes from the panel (V6 · Tray breathes); reserved until it mounts. */
+  #panel{width:1200px}
+  #panel:empty{height:1080px}
 
   /* ---------------- help band ---------------- */
   .help{background:#fafbff;border-top:1px solid #c9cee1;border-bottom:1px solid #c9cee1}
@@ -283,7 +285,9 @@
   <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
   <button class="proto-picker-item">V2 · Deal</button>
   <button class="proto-picker-item">V3 · Carousel</button>
-  <button class="proto-picker-item">V4 · Stack</button>
+  <button class="proto-picker-item">V4 · Layered</button>
+  <button class="proto-picker-item">V5 · Wave</button>
+  <button class="proto-picker-item">V6 · Tray</button>
 </nav>
 
 <div class="proto-edge" role="radiogroup" aria-label="Edge blur and fade">
@@ -314,9 +318,10 @@
 
   // Three transitions behind the picker. V1 unfurls in Y, V2 deals the cards
   // out of a stack, V3 runs the sections on a vertical carousel track anchored
-  // to the rail, V4 peels sheets off a stack. The wider exploration lives in lab.html and
+  // to the rail; V4–V6 come from the 24 Sep benchmark (Layered fade-through,
+  // Proximity wave, Breathing tray). The wider exploration lives in lab.html and
   // saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'deal', 'carousel', 'stack'];
+  const STYLES = ['slide', 'deal', 'carousel', 'layered', 'wave', 'tray'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
