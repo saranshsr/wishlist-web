@@ -1,0 +1,8 @@
+.DS_Store
+# review screenshots generated while matching Figma — not part of the site
+fan-hover.png
+figma-vs-build.png
+rail-hover.png
+transition-edge.png
+# the old React Native panel; the page no longer loads it
+SavedItemsScreen.jsx

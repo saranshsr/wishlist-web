@@ -1,0 +1,202 @@
+/* MOTION PANEL styles — shared verbatim by the harness (prototypes/motion) and
+   the shipped page (saved-items-page). Edit here, then copy to the other one;
+   they must not drift.
+
+   Tokens are scoped to .mp-frame rather than :root on purpose: the host page
+   has its own --ink (#404553, the chrome ink), and inheriting it would quietly
+   restyle every label in here. */
+
+.mp-frame{
+  --ink:#1d2539; --strong:#101628; --tert:#666d85; --brand:#0f7eff;
+  --surf2:#f9f9fb; --surf3:#f2f3f7; --action:#0f61ff; --actionSub:#ebf0fd;
+  width:1200px;height:1080px;display:flex;background:#fff;border-radius:20px;overflow:hidden;
+  font-family:"Noontree",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.mp-frame [data-ligatures="on"]{font-variant-ligatures:common-ligatures!important;font-feature-settings:"liga" 1!important}
+.mp-rail{position:relative;width:280px;background:var(--surf2);flex:none;padding:0;border:0}
+
+/* Selection layer: white row + notch + the two inverted corners that blend it
+   into the white content area. At row 0 the top corner sits at y:-20 and the
+   frame's overflow:hidden clips it, so it can stay mounted and just travel. */
+.mp-sel{position:absolute;left:0;top:0;width:280px;height:96px;background:#fff;pointer-events:none;z-index:1;will-change:transform}
+.mp-sel-notch{position:absolute;left:2px;top:37px;width:4px;height:22px;border-radius:0 6px 6px 0;background:var(--brand)}
+.mp-sel-corner{position:absolute;left:260px;width:20px;height:20px;display:block}
+.mp-sel-corner-top{top:-20px}
+.mp-sel-corner-bot{top:96px;transform:scaleY(-1)}
+/* Unselected rows carry no notch — the blue one in .mp-sel is the only one,
+   and it travels. (The frame draws a muted notch on every row; deliberate
+   divergence.) */
+
+/* "3 or more" preview — frame 419:535726. Outer sizes include the 1.498/1.342
+   padding, so border-box reproduces the Master boxes exactly. */
+/* --spread/--tilt/--lift are 0 at rest, so the resting stack is exactly the
+   frame's. Hover sets them; the transition is on `transform`, which interpolates
+   the resulting matrices — the vars themselves don't need to be animatable. */
+.mp-fan{position:relative;display:block;width:68px;height:56px;flex:none;
+  --spread:0px;--tilt:0deg;--lift:0px;--cover:0deg}
+/* Closing curve. Asymmetric on purpose: the folder springs open and shuts
+   quietly, so pulling the pointer away never feels like a second animation. */
+.mp-fan-card{position:absolute;left:50%;top:50%;background:#fff;border-radius:12px;display:block;
+  transition:transform 160ms cubic-bezier(.23,1,.32,1)}
+.mp-fan-l,.mp-fan-r{width:32.96px;height:42.947px;padding:1.498px;filter:drop-shadow(0 0 3.196px rgba(0,0,0,.06))}
+.mp-fan-l{transform:translate(calc(-50% - 11.09px - var(--spread)),-50%) rotate(calc(-8deg - var(--tilt)))}
+.mp-fan-r{transform:translate(calc(-50% + 11.28px + var(--spread)),-50%) rotate(calc(8deg + var(--tilt)))}
+.mp-fan-mid{width:36.847px;height:48.234px;padding:1.342px;filter:drop-shadow(0 0 3.644px rgba(0,0,0,.06));
+  transform:translate(calc(-50% + 0.09px),calc(-50% - var(--lift))) rotate(var(--cover))}
+/* Gentler, not gone: a hint of spread, and no overshoot. */
+@media (prefers-reduced-motion: reduce){
+  .mp-fan-card,
+  .mp-row:not([aria-selected="true"]):hover .mp-fan-card{transition:transform 120ms cubic-bezier(.23,1,.32,1) 0ms}
+  .mp-row:not([aria-selected="true"]):hover .mp-fan{--spread:1px;--tilt:2deg;--lift:0px;--cover:0deg}
+}
+.mp-fan-master{display:block;width:100%;height:100%;border-radius:10px;overflow:hidden;background:var(--surf3)}
+.mp-fan-mid .mp-fan-master{border-radius:5.368px}
+.mp-fan-master img{width:100%;height:100%;object-fit:cover;display:block}
+.mp-row{position:relative;width:280px;height:96px;display:flex;align-items:center;gap:12px;padding:0 20px;background:transparent;border:0;text-align:left;cursor:pointer;font:inherit}
+/* Hover covers the whole option — 280x96 at radius 10, which is the row box the
+   frame itself carries. Opacity-only, and pointer-gated so a tap on touch
+   doesn't leave a stuck hover. */
+/* Square on both sides. The row spans the full rail, so any radius pulls the
+   fill off an edge and leaves a sliver of rail showing — on the right it
+   floated against the white content area, on the left it curved away from x:0.
+   The soft corner at the very top of row 0 is the frame's own 20px radius. */
+.mp-row::before{content:"";position:absolute;inset:0;background:rgba(16,22,40,.035);opacity:0;pointer-events:none;z-index:0;transition:opacity 150ms ease-out}
+@media (hover:hover) and (pointer:fine){
+  .mp-row:not([aria-selected="true"]):hover::before{opacity:1}
+  /* The folder opens: the wings fan out from behind the cover, the cover lifts
+     and tips as if picked up. Previews that the folder holds more than one
+     thing, using the stack that is already there rather than a new affordance.
+     easeOutBack (easings.co) gives the wings a small overshoot so they settle
+     like real cards, and the right wing trails the left by 45ms so the stack
+     spreads rather than snapping open as one rigid object. */
+  .mp-row:not([aria-selected="true"]):hover .mp-fan{--spread:4px;--tilt:7deg;--lift:2px;--cover:-1.5deg}
+  .mp-row:not([aria-selected="true"]):hover .mp-fan-l{transition:transform 260ms cubic-bezier(.34,1.56,.64,1)}
+  .mp-row:not([aria-selected="true"]):hover .mp-fan-r{transition:transform 260ms cubic-bezier(.34,1.56,.64,1) 45ms}
+  .mp-row:not([aria-selected="true"]):hover .mp-fan-mid{transition:transform 200ms cubic-bezier(.23,1,.32,1)}
+}
+/* Keyboard focus reuses the same box rather than adding a second outline. */
+.mp-row:focus-visible{outline:none}
+.mp-row:focus-visible::before{opacity:1;box-shadow:inset 0 0 0 2px var(--brand)}
+/* Paint order in the rail, bottom to top: hover fill, then the white selection
+   row and its corners, then the row's own content. The row must NOT carry a
+   z-index or it becomes a stacking context and traps its children below the
+   selection layer. Scoped to the content children on purpose — a blanket
+   `.mp-row>*` also hit the row notch and overrode its position:absolute. */
+.mp-row>.mp-fan,.mp-row>.mp-meta{position:relative;z-index:2}
+.mp-thumb{width:56px;height:56px;border-radius:10px;overflow:hidden;background:var(--surf3);flex:none}
+.mp-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.mp-meta{flex:1;min-width:0;position:relative}
+.mp-rowName{display:block;font-weight:700;font-size:16px;line-height:20px;letter-spacing:-.16px;color:var(--strong);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mp-rowCount{display:block;margin-top:4px;font-weight:400;font-size:14px;line-height:20px;letter-spacing:-.1px;color:var(--tert)}
+
+.mp-content{flex:1;min-width:0;padding:20px;display:flex;flex-direction:column;gap:20px}
+.mp-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+/* position:relative — popLayout absolutely positions the exiting title, and
+   without a positioned parent it would anchor to the page instead. */
+.mp-title-wrap{position:relative;display:flex;align-items:baseline;gap:10px;min-height:32px}
+.mp-title{margin:0;font-weight:700;font-size:22px;line-height:32px;letter-spacing:-.25px;color:var(--ink)}
+.mp-modes{display:flex;gap:2px;padding:3px;border-radius:10px;background:var(--surf3);flex:none}
+.mp-mode{border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:var(--tert);padding:5px 10px;border-radius:8px;cursor:pointer}
+.mp-mode.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(34,34,34,.06)}
+
+/* --fade-move has to be registered to be transitionable; inherits so the stage
+   and the blur overlays all read the same numbers off the wrapper. */
+@property --fade-move{syntax:'<length>';inherits:true;initial-value:0px}
+@property --fade-pull{syntax:'<length>';inherits:true;initial-value:0px}
+
+/* The wrapper owns the edge geometry. --fade-top/--fade-bot track how much
+   scroll is left (set from JS); --fade-move covers a switch, where the grid
+   translates past the bounds and would clip with nothing scrolling at all. */
+.mp-stage-wrap{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;
+  --fade-top:0px; --fade-bot:0px; --fade-move:0px; --fade-pull:0px;
+  --ft:max(var(--fade-top),var(--fade-move),var(--fade-pull));
+  --fb:max(var(--fade-bot),var(--fade-move),var(--fade-pull));
+  /* Asymmetric on purpose: it has to be there the instant the grid starts
+     moving, and gone the instant it stops. A slow release left a blur band
+     hanging over settled content for the better part of a second. */
+  transition:--fade-move 130ms cubic-bezier(.23,1,.32,1)}
+.mp-stage-wrap[data-moving]{--fade-move:34px;transition:--fade-move 60ms linear}
+
+/* The stage is the scroll container: content scrolls normally, and only an
+   overscroll past an edge switches collection. overscroll-behavior stops the
+   gesture chaining out to the page once we reach an edge.
+   The mask holds most of its opacity through the band and only lets go near
+   the very edge, so the fade reads as a soft edge rather than a wash. */
+.mp-stage{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  --mask:linear-gradient(to bottom,
+    transparent 0, rgba(0,0,0,.72) calc(var(--ft) * .55), #000 var(--ft),
+    #000 calc(100% - var(--fb)), rgba(0,0,0,.72) calc(100% - var(--fb) * .55), transparent 100%);
+  -webkit-mask-image:var(--mask); mask-image:var(--mask);
+  scrollbar-width:none}
+.mp-stage::-webkit-scrollbar{display:none}
+
+/* Progressive blur: the band is blurred and the blur itself ramps out, so a
+   card crossing the edge softens before it fades instead of shearing. Height is
+   proportional to the fade, never a constant — otherwise a permanent blur strip
+   sits over the outermost cards when there is nothing to soften. */
+.mp-edge{position:absolute;left:0;right:0;pointer-events:none;z-index:2}
+.mp-edge-t{top:0;height:calc(var(--ft) * 1.35);
+  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+  -webkit-mask-image:linear-gradient(to bottom,#000 0,rgba(0,0,0,.5) 55%,transparent 100%);
+          mask-image:linear-gradient(to bottom,#000 0,rgba(0,0,0,.5) 55%,transparent 100%)}
+.mp-edge-b{bottom:0;height:calc(var(--fb) * 1.35);
+  -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);
+  -webkit-mask-image:linear-gradient(to top,#000 0,rgba(0,0,0,.5) 55%,transparent 100%);
+          mask-image:linear-gradient(to top,#000 0,rgba(0,0,0,.5) 55%,transparent 100%)}
+@media (prefers-reduced-motion: reduce){ .mp-stage-wrap[data-moving]{--fade-move:0px} }
+/* Rubber band for the overscroll gesture. Lives on .mp-presence — inside the
+   scroller so scrollHeight is untouched, below the stage's mask so the edge
+   fade stays pinned to the panel. No transition while the gesture drives it;
+   the release attribute adds one for the spring back. */
+.mp-presence{min-height:100%;transform:translateY(var(--rubber,0px))}
+.mp-stage-wrap[data-release] .mp-presence{transition:transform 280ms cubic-bezier(.23,1,.32,1)}
+.mp-stage-wrap[data-release]{transition:--fade-move 130ms cubic-bezier(.23,1,.32,1),--fade-pull 240ms cubic-bezier(.23,1,.32,1)}
+@media (prefers-reduced-motion: reduce){ .mp-presence{transform:none} }
+.mp-grid-wrap{position:relative;flex:1}
+/* popLayout sets position:absolute on the exiting child itself — don't fight it */
+.mp-grid{display:flex;flex-wrap:wrap;gap:20px;width:880px;align-content:flex-start}
+.mp-cell{width:205px}
+
+.mp-card{width:205px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:inset 0 0 0 1px var(--surf3)}
+.mp-top{position:relative;height:296px;background:var(--surf2);overflow:hidden}
+.mp-photo{width:100%;height:100%;object-fit:cover;display:block}
+.mp-photo[data-fit="contain"]{object-fit:contain}
+.mp-pager{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:9999px;background:rgba(0,0,0,.04)}
+.mp-pager i{width:6px;height:6px;border-radius:50%;background:rgba(0,0,0,.24);display:block}
+.mp-pager i.on{background:var(--strong)} .mp-pager i.sm{width:4px;height:4px} .mp-pager i.xs{width:2px;height:2px}
+.mp-kebab{position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.5)}
+.mp-kebab img{width:20px;height:20px;display:block}
+.mp-bottom{padding:8px;display:flex;flex-direction:column;gap:16px}
+.mp-name{margin:0;font-weight:500;font-size:14px;line-height:20px;letter-spacing:-.1px;color:var(--ink);height:42px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.mp-rating{align-self:flex-start;display:inline-flex;align-items:center;gap:2px;height:18px;padding:2px 4px;border-radius:4px;background:var(--surf3)}
+.mp-rating img{width:12px;height:11.5px;display:block} .mp-rating b{font-weight:600;font-size:12.2px;color:var(--strong)} .mp-rating em{font-style:normal;font-size:12.2px;color:var(--tert)}
+.mp-price{display:flex;flex-wrap:wrap;align-items:flex-end;gap:2px}
+.mp-sell{font-weight:700;font-size:16px;line-height:22px;letter-spacing:-.15px;color:var(--ink)}
+.mp-listed{font-weight:400;font-size:14px;color:var(--tert);text-decoration:line-through}
+.mp-disc{font-weight:600;font-size:14px;color:#0f8857}
+.mp-eta{width:122px;height:18px;display:block}
+.mp-actions{display:flex;align-items:flex-start;gap:12px}
+.mp-btnP{flex:1;height:40px;display:inline-flex;align-items:center;justify-content:center;gap:4px;border-radius:8px;background:var(--actionSub);font-weight:600;font-size:14px;color:var(--action)}
+.mp-btnP img{width:16px;height:16px;display:block}
+.mp-btnI{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;box-shadow:inset 0 0 0 1px var(--surf3)}
+.mp-btnI img{width:20px;height:20px;display:block}
+
+/* ---- V3 · Scrubbed: stacked sheets ----
+   The stage stops scrolling (off-page sheets would otherwise make it
+   scrollable) and becomes the frame the sheets move within. Rounded top and a
+   soft shadow on the leading edge sell a sheet sliding over another; at rest
+   the shadow sits above the stage and is clipped away. */
+.mp-stage{position:relative}
+.mp-stage[data-mode="scrub"]{overflow:hidden}
+.mp-stage[data-mode="scrub"] .mp-presence{height:100%}
+.mp-sheets{position:absolute;inset:0}
+.mp-sheet{position:absolute;inset:0;background:#fff;border-radius:16px 16px 0 0;
+  box-shadow:0 -14px 28px -18px rgba(16,22,40,.22);transform-origin:50% 0;will-change:transform,opacity}
+
+/* ---- V4 · Feed: one continuous scroll ----
+   Proximity snapping settles a scroll onto a section without trapping it. The
+   divider lives in the gap above each section, so the snapped top edge is the
+   grid itself, not a hairline. */
+.mp-stage[data-mode="feed"]{scroll-snap-type:y proximity}
+.mp-sec{position:relative;scroll-snap-align:start}
+.mp-sec + .mp-sec{margin-top:48px}
+.mp-sec + .mp-sec::before{content:"";position:absolute;left:0;top:-24px;width:880px;height:1px;background:var(--surf3)}
