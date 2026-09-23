@@ -1212,8 +1212,10 @@ function SilhouetteMorph({ active, reduce, onSettle }) {
    ease-out, cubic-bezier(0.23, 1, 0.32, 1) over 0.46s, that decelerates hard
    and stops clean. Deriving both pages from p means a switch mid-flight
    just re-aims the camera — nothing can double up or jumble. */
-const DEPTH_EASE = { duration: 0.46, ease: [0.23, 1, 0.32, 1] };
-const DEPTH_FLICK = { duration: 0.36, ease: [0.23, 1, 0.32, 1] };
+// Timing matches V3 (Saransh, 24 Sep: 0.46s was too quick to see the depth):
+// V3's curve, cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s — soft start, long glide.
+const DEPTH_EASE = { duration: 0.9, ease: [0.3, 0.05, 0.05, 1] };
+const DEPTH_FLICK = DEPTH_EASE;
 const DEPTH_NEAR = 0.04, DEPTH_FAR = 0.06;
 function DepthLayer({ k, c, p, role, span }) {
   // role: 'to' (the page arriving), 'from' (the page leaving), or null.
@@ -1252,7 +1254,7 @@ function DepthTrack({ active, reduce, launch, onSettle }) {
     started.current = active;
     if (reduce) { p.set(active); onSettle(); return; }
     const a = animate(p, active, launch.current?.v ? DEPTH_FLICK : DEPTH_EASE);
-    const t = setTimeout(onSettle, 380);
+    const t = setTimeout(onSettle, 600);
     return () => { a.stop(); clearTimeout(t); };
   }, [active]);
   return (
