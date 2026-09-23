@@ -266,7 +266,6 @@
   <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
   <button class="proto-picker-item">V2 · Deal</button>
   <button class="proto-picker-item">V3 · Carousel</button>
-  <button class="proto-picker-item">V4 · Converge</button>
 </nav>
 
 <script>
@@ -288,11 +287,11 @@
   // The panel defaults to the harness's asset path, which is two levels down.
   mod.setAssetBase('assets/images/');
 
-  // Four transitions behind the picker. V1 unfurls in Y, V2 deals the cards
-  // out of a stack, V3 runs the sections on a vertical carousel track, V4 converges each
-  // card onto its slot from just in front of the glass. The wider exploration lives in lab.html
-  // and saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'deal', 'carousel', 'signature'];
+  // Three transitions behind the picker. V1 unfurls in Y, V2 deals the cards
+  // out of a stack, V3 runs the sections on a vertical carousel track anchored
+  // to the rail. The wider exploration lives in lab.html and
+  // saved-items-rn/prototypes/motion.
+  const STYLES = ['slide', 'deal', 'carousel'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
@@ -322,7 +321,8 @@
     else if (e.key === 'ArrowRight') setActive((cur + 1) % STYLES.length);
     else if (e.key === 'ArrowLeft') setActive((cur - 1 + STYLES.length) % STYLES.length);
   });
-  setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+  // Clamped, so an old ?v=4 link (V4 was retired) still opens a version.
+  setActive(Math.min(STYLES.length, Math.max(1, parseInt(new URLSearchParams(location.search).get('v'), 10) || 1)) - 1);
   requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
   window.__ready = true;
 </script>

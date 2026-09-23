@@ -673,7 +673,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
        · opacity — none. The outgoing card simply leaves through the edge.
          The one exception is a short (one-row) section that would start or
          end inside the stage: it fades there, instead of popping.
-     Each section scales about its own centre, as the cards do. */
+     Each section scales about its LEFT edge (vertically its own middle), so
+     while it shrinks it stays flush against the rail — anchored to the tabs,
+     the way Saransh asked — instead of drawing in from both sides. */
   const CAROUSEL = { duration:0.9, ease:[0.3, 0.05, 0.05, 1] };
   const inStage = () => trackRef.current.D < stageMid * 2;
   const carouselV = {
@@ -889,6 +891,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
                 style={(style === 'slideDepth' || style === 'push' || style === 'parallax') ? { transformOrigin: `50% ${stageMid}px` }
+                     : style === 'carousel' ? { transformOrigin: '0% 50%' }
                      : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> (unfurl && per.cardFor) ? (
