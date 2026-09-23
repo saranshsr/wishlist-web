@@ -320,9 +320,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   /* Slide travels on Y, matching the rail's own axis: picking a collection
      further down the rail brings the grid up from below and sends the old one
      out the top. Sideways motion contradicted the rail and read as arbitrary. */
-  /* gridScale: V1 ('slide') shrinks the whole grid to 0.98 — across 880px
-     that is sub-pixel on most of the content. V2 ('slideDepth') passes 1 here
-     and puts the depth on the cards instead (see cardDepthV). */
+  /* Shared Slide parent: `travel` px of Y along the rail's direction, and an
+     optional whole-grid scale (V1 passes 1 — pure travel). */
   const makeSlideV = (travel, gridScale) => ({
     enter: (d)=>({ y: reduce?0:(d>0?travel:-travel), opacity:0, filter: reduce?'blur(0px)':'blur(4px)', scale: reduce?1:gridScale }),
     /* The entrance spring inherits the scroll gesture's velocity when there was
@@ -339,12 +338,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
        A duration curve ends when it looks like it has ended. */
     exit:(d)=>({ y: reduce?0:(d>0?-travel:travel), opacity:0, filter: reduce?'blur(0px)':'blur(4px)', scale: reduce?1:gridScale, transition:{ y:{duration:0.2, ease:EASE_OUT}, opacity:{duration:0.18}, scale:{duration:0.2}, filter:{duration:0.18} } }),
   });
-  /* V1 and V2 used to share 44px of travel plus a little scale, and the
-     travel drowned the scale — they read as the same transition. Now they sit
-     on different axes: V1 is pure Y (full travel, no scale anywhere), V2 is
-     pure Z (10px of travel as a direction hint, all the depth on the cards). */
   const slideV = makeSlideV(44, 1);
-  const slideDepthV = makeSlideV(10, 1);
   /* Depth — Material shared-axis Z / iOS push. Forward: both surfaces travel
      toward the viewer (old scales up and out, new rises from behind). Reverse
      flips it, so the axis reads as going back. Blur sells the focal plane. */
@@ -396,12 +390,24 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      depend on direction, so a stale `custom` has nothing wrong to hold. It's a
      plain object — it never reads custom at all. Kept at 0.2s and unstaggered
      so it can't lengthen mode="wait"'s blank hold. */
-  // V2: depth only. Cards rise from behind at 0.92 and recede to 0.95; no
-  // card travel, so the scale is the whole story.
-  const cardDepthV = {
-    enter: { scale: reduce ? 1 : 0.92 },
-    center: ({ delay }) => ({ scale:1, transition:{ scale:{ type:'spring', stiffness:300, damping:30, delay } } }),
-    exit: { scale: reduce ? 1 : 0.95, transition:{ scale:{ duration:0.2, ease:EASE_OUT } } },
+  /* V2 · Depth — at SECTION level. The whole outgoing grid shrinks back and
+     fades as one piece; the whole incoming grid rises from 0.90 to full scale,
+     sharpening out of a slight blur. No per-card motion: the section is the
+     object. (An earlier V2 put the depth on each card because a grid-wide 0.98
+     was invisible across 880px — the fix was a scale you can see, not moving
+     it onto the cards.) Scales toward the middle of the panel, not the grid's
+     own centre, so a short collection recedes into the panel rather than
+     toward a point beside itself; see depthOrigin. */
+  const depthSectionV = {
+    enter: { opacity:0, scale: reduce ? 1 : 0.9, filter: reduce ? 'blur(0px)' : 'blur(5px)' },
+    center: { opacity:1, scale:1, filter:'blur(0px)', transition:{
+      scale: reduce ? { duration:0 } : { type:'spring', stiffness:260, damping:30 },
+      // opacity waits 50ms so the outgoing section is mostly gone before the
+      // incoming one shows — an overlap, not a double exposure.
+      opacity:{ duration:0.26, ease:EASE_OUT, delay: reduce ? 0 : 0.05 },
+      filter:{ duration:0.3, ease:EASE_OUT } } },
+    exit: { opacity:0, scale: reduce ? 1 : 0.95, filter: reduce ? 'blur(0px)' : 'blur(5px)', transition:{
+      scale:{ duration:0.22, ease:EASE_OUT }, opacity:{ duration:0.16, ease:EASE_OUT }, filter:{ duration:0.18, ease:EASE_OUT } } },
   };
   /* Column-aware stagger for V3/V4. V1/V2 stagger by row, so on Home decor
      (one row) and Sneakers (one card) their choreography never shows. Walking
@@ -464,7 +470,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   /* Per-style grid + card choreography for the staggered family. */
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
-    slideDepth: { grid: slideDepthV, card: cardDepthV,  delay: (i, n) => rowDelay(i, n) },
+    slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
     reveal:     { grid: revealGridV, card: revealCardV, delay: (i, n) => gridDelay(i, n, 0.02, 0.03), reveal: true },
     photo:      { grid: photoGridV,  card: photoCardV,  delay: (i, n) => gridDelay(i, n, 0.02, 0.025), settle: true },
   };
@@ -476,7 +482,17 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      cross-dissolve rather than two grids colliding — and in V3 the new cards
      wipe in over the old ones, which is what a wipe should be. V1/V2 keep
      "wait": their travel needs the old grid gone first. */
-  const gridMode = (style === 'reveal' || style === 'photo') ? 'popLayout' : mode;
+  // V2 overlaps too now: the incoming section rising while the outgoing one
+  // sinks is the whole effect, and a blank frame between them would break it.
+  const gridMode = (style === 'reveal' || style === 'photo' || style === 'slideDepth') ? 'popLayout' : mode;
+  /* Transform-origin for V2: the vertical middle of the stage, measured, so
+     every collection recedes toward the same point in the panel. */
+  const [stageMid, setStageMid] = useState(494);
+  React.useEffect(() => {
+    const el = stageRef.current; if (!el) return;
+    const m = () => setStageMid(Math.round((el.clientHeight || 988) / 2));
+    m(); const ro = new ResizeObserver(m); ro.observe(el); return () => ro.disconnect();
+  }, []);
 
   /* ---- rail selection ----
      `pos` is the fractional collection index the white selection row sits at.
@@ -613,8 +629,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
               <motion.div key={col.id} className="mp-grid" custom={dir}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
+                style={style === 'slideDepth' ? { transformOrigin: `50% ${stageMid}px` } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
-                {col.items.map((key,i)=> unfurl ? (
+                {col.items.map((key,i)=> (unfurl && per.card) ? (
                   <motion.div key={i} className="mp-cell" variants={per.card}
                     custom={{ d: dir, delay: per.delay(i, col.items.length) }}
                     {...(per.reveal && !reduce ? { 'data-reveal': '', style: { '--rdir': dir > 0 ? 'to top' : 'to bottom' } } : null)}>
