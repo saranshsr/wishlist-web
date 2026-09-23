@@ -48,7 +48,7 @@ const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PI
 /* Card-table styles: the grid always fits the stage, so it never scrolls and
    nothing needs the edge fade. Their cards tilt, stack and turn past the grid's
    edges, so the stage stops clipping for them (data-open) — no mask, no blur. */
-const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami', 'gooey', 'silhouette']);
+const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami', 'gooey', 'silhouette', 'depth2']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
 const TRACK_GAP = 48, TRACK_SCALE = 0.75;   // V3 · Carousel (measured)
@@ -1195,6 +1195,76 @@ function SilhouetteMorph({ active, reduce, onSettle }) {
 }
 /* ---- SILHOUETTE END ---- */
 
+/* ==== V5 · Depth (rebuilt 24 Sep) ====
+   Real depth, tied to where you're going. Every collection sits at the same
+   place at a different depth, and ONE value — p, the fractional collection
+   index — says where the camera is. Going down the rail moves the camera
+   deeper: the page you leave drifts toward you (to 1.04) and fades; the next
+   one emerges from behind (0.94 → 1). Going up is the mirror: the page you
+   leave sinks back, the previous one comes forward to meet you.
+   What the first build got wrong, measured frame by frame: a ~100ms fog where
+   both pages were blurred and half-visible at once; a 3.5% scale that the
+   36px rise overpowered (it read as a blurry V1); a soft spring tail that
+   crept the last 5px until ~580ms; and the same exit whichever way you went.
+   So: the leaving page is gone by ~40% of the trip and is the only one with
+   any blur (≤2px); the arriving page is sharp from its first frame and fully
+   in by ~65%; no vertical travel — the depth is the motion; and one strong
+   ease-out, cubic-bezier(0.23, 1, 0.32, 1) over 0.46s, that decelerates hard
+   and stops clean. Deriving both pages from p means a switch mid-flight
+   just re-aims the camera — nothing can double up or jumble. */
+const DEPTH_EASE = { duration: 0.46, ease: [0.23, 1, 0.32, 1] };
+const DEPTH_FLICK = { duration: 0.36, ease: [0.23, 1, 0.32, 1] };
+const DEPTH_NEAR = 0.04, DEPTH_FAR = 0.06;
+function DepthLayer({ k, c, p, role, span }) {
+  // role: 'to' (the page arriving), 'from' (the page leaving), or null.
+  const scale = useTransform(p, (v) => { const d = k - v, m = Math.min(1, Math.abs(d)); return d < 0 ? 1 + DEPTH_NEAR * m : 1 - DEPTH_FAR * m; });
+  // Fades are measured as a share of the whole trip (span), so a jump across
+  // two collections hands over exactly like a single step. The arriving page
+  // starts at 5% and is full by 50%; the leaving one is gone by 45%.
+  const opacity = useTransform(p, (v) => {
+    const a = Math.abs(k - v) / span;
+    if (role === 'to') return Math.max(0, Math.min(1, (0.95 - a) / 0.45));
+    if (role === 'from') return Math.max(0, Math.min(1, 1 - a / 0.45));
+    return a < 0.001 ? 1 : 0;
+  });
+  const filter = useTransform(p, (v) => role === 'from' ? `blur(${Math.min(2, Math.abs(k - v) * 5).toFixed(2)}px)` : 'blur(0px)');
+  const on = role === 'to' || (role === null && opacity.get() > 0.5);
+  return (
+    <motion.div className="mp-depth-layer" aria-hidden={role !== 'to'}
+      style={{ scale, opacity, filter, zIndex: role === 'to' ? 2 : 1, pointerEvents: role === 'to' ? 'auto' : 'none' }}>
+      <div className="mp-grid">
+        {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
+      </div>
+    </motion.div>
+  );
+}
+function DepthTrack({ active, reduce, launch, onSettle }) {
+  const p = useMotionValue(active);
+  // Which page is leaving, decided in the same render as the switch. As
+  // state set in an effect it arrived a render late, and the first frame
+  // after a click had the old page with no role — opacity 0: a blank flash.
+  const last = React.useRef(active), fromRef = React.useRef(active);
+  if (last.current !== active) { fromRef.current = last.current; last.current = active; }
+  const from = fromRef.current;
+  const started = React.useRef(active);
+  React.useEffect(() => {
+    if (started.current === active) return;
+    started.current = active;
+    if (reduce) { p.set(active); onSettle(); return; }
+    const a = animate(p, active, launch.current?.v ? DEPTH_FLICK : DEPTH_EASE);
+    const t = setTimeout(onSettle, 380);
+    return () => { a.stop(); clearTimeout(t); };
+  }, [active]);
+  return (
+    <div className="mp-depth" style={{ height: sectionH(COLLECTIONS[active].items.length) }}>
+      {COLLECTIONS.map((c, k) => (
+        <DepthLayer key={c.id} k={k} c={c} p={p} span={Math.max(1, Math.abs(active - from))} role={k === active ? 'to' : k === from ? 'from' : null} />
+      ))}
+    </div>
+  );
+}
+/* ==== end V5 · Depth ==== */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -2069,7 +2139,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           data-stack={style === 'stack' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {style === 'silhouette' ? (
+        {style === 'depth2' ? (
+          <DepthTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
+        ) : style === 'silhouette' ? (
           <SilhouetteMorph active={active} reduce={reduce} onSettle={() => setMoving(false)} />
         ) : style === 'gooey' ? (
           reduce ? <GooeyFade active={active} /> : <GooeyMerge active={active} dir={dir} launch={launchRef} onSettle={() => setMoving(false)} />

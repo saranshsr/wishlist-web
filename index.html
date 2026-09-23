@@ -290,10 +290,10 @@
 
 <nav class="proto-picker" aria-label="Transition">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
+  <button class="proto-picker-item" data-active aria-current="true">V1 · Cascade</button>
   <button class="proto-picker-item">V2 · Deal</button>
   <button class="proto-picker-item">V3 · Carousel</button>
-  <button class="proto-picker-item">V4 · Liquid Tab</button>
+  <button class="proto-picker-item">V4 · Liquid</button>
   <button class="proto-picker-item">V5 · Depth</button>
 </nav>
 
@@ -351,7 +351,7 @@
     mount(i);
     // V2 (Deal) never clips, so it has no edge treatment to compare.
     // V2, V7 and V8 never clip, so they have no edge treatment to compare.
-    const noEdge = ['deal', 'gooey', 'silhouette'].includes(STYLES[i]);
+    const noEdge = ['deal', 'gooey', 'silhouette', 'depth2'].includes(STYLES[i]);
     edgeBox.toggleAttribute('data-inert', noEdge);
     edgeBox.title = noEdge ? 'This version has no edge fade to compare' : '';
   }

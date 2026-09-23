@@ -323,3 +323,11 @@ html[data-edge-off] .mp-edge{display:none}
 .mp-silo-rect,.mp-silo-fillet{position:absolute;left:0;top:0;background:var(--sil-fill);pointer-events:none;z-index:0}
 .mp-silo-grid{position:absolute;left:0;top:0}
 /* ---- SILHOUETTE CSS ---- */
+
+/* V5 · Depth — every collection stacked in place at its own depth. The stage
+   is open for this style (no edge fade, blur strip or clip — Saransh: cleaner
+   without the band above the cards), so each page scales from its TOP edge:
+   at 1.04 it grows down and sideways (17px a side, inside the 20px padding)
+   and never rises into the folder title above it. */
+.mp-depth{position:relative}
+.mp-depth-layer{position:absolute;left:0;right:0;top:0;transform-origin:50% 0;will-change:transform,opacity}
