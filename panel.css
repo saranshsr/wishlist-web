@@ -236,3 +236,25 @@
    overlays. Cards clip hard at the stage edge. Nothing else changes. */
 html[data-edge-off] .mp-stage{-webkit-mask-image:none;mask-image:none}
 html[data-edge-off] .mp-edge{display:none}
+
+/* ---- VARIANT A CSS ---- */
+/* V4 · Stack. The stage clips instead of scrolling (data-track, shared with
+   the carousel), and lends the sheets the content column's 20px side padding
+   as runway so a lifted sheet's rounded corners and shadow aren't sheared by
+   the scroller's own edge. Every sheet sits at the top of the stage and
+   scales from its top centre, the way a pile recedes. */
+.mp-stage-wrap[data-stack]{margin:0 -20px}
+.mp-stage-wrap[data-stack] .mp-presence{padding:0 20px}
+.mp-stack{position:relative}
+.mp-stack-sheet{position:absolute;left:0;right:0;top:0;transform-origin:50% 0}
+/* The paper: opaque white, 12px proud of the cards, so the sheet on top
+   covers the one beneath. White on the white panel — invisible at rest. */
+.mp-stack-back{position:absolute;inset:-12px -12px -16px;border-radius:24px;background:#fff}
+/* The shadow a lifted sheet casts on the pile. Its opacity comes from JS
+   (0 on the pile, 1 in the air), so only a sheet that is moving shows an edge. */
+.mp-stack-shade{position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+  box-shadow:0 0 0 1px rgba(16,22,40,.05),0 22px 44px -18px rgba(16,22,40,.30),0 6px 14px -8px rgba(16,22,40,.14)}
+.mp-stack-sheet .mp-grid{position:relative}
+/* Shade over a sheet in the pile, same footprint as its paper. */
+.mp-stack-veil{position:absolute;inset:-12px -12px -16px;border-radius:24px;background:#101628;pointer-events:none}
+/* ---- VARIANT A CSS ---- */

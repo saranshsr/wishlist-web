@@ -167,6 +167,96 @@ function CarouselTrack({ active, reduce, onSettle }) {
   );
 }
 
+/* ---- VARIANT A START ---- */
+/* V4 · Stack — the collections are sheets in a pile, first one on top, and
+   the rail walks down through it. Going to the next collection peels the top
+   sheet off: it lifts up and away on the scroll's own velocity, casting a
+   shadow on the sheet beneath, which comes forward out of the pile (a touch
+   small and low, growing to full size as it's uncovered). Going back lays the
+   sheet down again on top: it drops in from above, its shadow tightening as
+   it touches down, while the one it covers settles back into the pile.
+   Like the carousel it is one derived piece: a single motion value `p` (the
+   fractional collection index) and every sheet's y, scale, opacity and shadow
+   are pure functions of it, so an interruption is a retarget of `p` and the
+   pile can never be out of order. Sheets always paint first-on-top; each has
+   an opaque white backing, so the one on top genuinely covers the one below
+   instead of the two double-exposing. At rest the backing is white on white
+   with no shadow — invisible, the page looks exactly as before. */
+const STACK_SINK = 0.05;      // a sheet one deep sits at 0.95 …
+const STACK_DROP = 18;        // … and 18px lower, like a pile seen from above
+const STACK_RAISE = 1.012;    // a peeled sheet comes up toward you a hair
+const STACK_VEIL = 0.05;      // the pile sits in the top sheet's shade
+const STACK_SPRING = { type:'spring', visualDuration:0.48, bounce:0 };
+// A peeled sheet travels its full height (plus its paper and shadow), so it
+// leaves the stage completely: the sheet beneath is genuinely uncovered, never
+// seen through a half-faded one.
+const stackLift = (k) => sectionH(COLLECTIONS[k].items.length) + 16 + 40;
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+
+function StackSheet({ k, c, p, on, reduce }) {
+  const L = stackLift(k);
+  // o < 0: peeled (above the pile), 0: on top, o > 0: in the pile.
+  const y = useTransform(p, (v) => { if (reduce) return 0; const o = k - v; return o < 0 ? Math.max(-1, o) * L : Math.min(1, o) * STACK_DROP; });
+  const scale = useTransform(p, (v) => { if (reduce) return 1; const o = k - v;
+    return o < 0 ? 1 + (STACK_RAISE - 1) * Math.min(1, -o) : 1 - STACK_SINK * Math.min(1, o); });
+  // Nothing fades. Sheets in the pile are hidden by the paper on top, and a
+  // peeled sheet stays solid all the way off the stage — fading it on the way
+  // out double-exposed its last strip over the sheet it had just uncovered.
+  // Opacity only switches a sheet off once it is fully off-stage or buried.
+  // Reduced motion: nothing moves; the sheet on top simply fades over the one
+  // beneath, which holds solid so the crossfade never dips toward blank.
+  const opacity = useTransform(p, (v) => { const o = k - v;
+    if (reduce) return o < 0 ? clamp01(1 + o) : (o < 1 ? 1 : 0);
+    return o > -0.999 && o < 1.5 ? 1 : 0; });
+  // The cast shadow belongs to a sheet in the air: it builds in the first
+  // fifth of the lift and is gone the moment the sheet is flat on the pile.
+  const shade = useTransform(p, (v) => { const o = k - v; return reduce || o >= 0 ? 0 : Math.min(1, -o * 5); });
+  // A sheet under the top one is in its shade; it brightens as it's uncovered.
+  const veil = useTransform(p, (v) => { const o = k - v; return reduce || o <= 0 ? 0 : STACK_VEIL * Math.min(1, o); });
+  return (
+    <motion.div className="mp-stack-sheet" aria-hidden={!on}
+      style={{ y, scale, opacity, zIndex: COLLECTIONS.length - k, pointerEvents: on ? 'auto' : 'none' }}>
+      <div className="mp-stack-back"><motion.span className="mp-stack-shade" style={{ opacity: shade }} /></div>
+      <div className="mp-grid">
+        {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
+      </div>
+      <motion.span className="mp-stack-veil" style={{ opacity: veil }} />
+    </motion.div>
+  );
+}
+
+function StackDeck({ active, reduce, launch, onSettle }) {
+  const p = useMotionValue(active);
+  const from = React.useRef(active);
+  React.useEffect(() => {
+    if (reduce) {
+      const a = animate(p, active, { duration: 0.2, ease: EASE_OUT });
+      const t = setTimeout(onSettle, 200);
+      return () => { a.stop(); clearTimeout(t); };
+    }
+    // A scroll flick hands its speed over: the peeled sheet (the old one going
+    // down, the new one coming back up) leaves at the speed the content was
+    // moving. launch.v is px/s, positive = content moving down.
+    const v = launch.current?.v;
+    const peeled = active > from.current ? from.current : active;
+    from.current = active;
+    // animate() on a moving value keeps its current velocity, so a second
+    // switch mid-flight bends the pile's motion rather than restarting it.
+    const opts = v ? { ...STACK_SPRING, velocity: -v / stackLift(peeled) } : STACK_SPRING;
+    const a = animate(p, active, opts);
+    let done = false;
+    const off = p.on('change', (x) => { if (!done && Math.abs(x - active) < 0.05) { done = true; onSettle(); } });
+    const t = setTimeout(() => { if (!done) { done = true; onSettle(); } }, 600);
+    return () => { a.stop(); off(); clearTimeout(t); };
+  }, [active]);
+  return (
+    <div className="mp-stack" style={{ height: sectionH(COLLECTIONS[active].items.length) }}>
+      {COLLECTIONS.map((c, k) => <StackSheet key={c.id} k={k} c={c} p={p} on={k === active} reduce={reduce} />)}
+    </div>
+  );
+}
+/* ---- VARIANT A END ---- */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -387,7 +477,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
     // one, and it is short so the band can't outlive the movement.
-    const t = setTimeout(() => setMoving(false), style === 'carousel' ? 950 : 340);
+    const t = setTimeout(() => setMoving(false), (style === 'carousel' || style === 'stack') ? 950 : 340);
     return () => clearTimeout(t);
   }, [active]);
 
@@ -882,11 +972,14 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             exit and froze mode="wait" entirely. */}
         <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}
           data-sig={style === 'signature' ? '' : undefined}
-          data-track={style === 'carousel' ? '' : undefined}>
+          data-track={(style === 'carousel' || style === 'stack') ? '' : undefined}
+          data-stack={style === 'stack' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
         {style === 'carousel' ? (
           <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} />
+        ) : style === 'stack' ? (
+          <StackDeck active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : isSharedGrid ? (
           <div className="mp-grid">
             <AnimatePresence mode={style === 'glide' ? 'popLayout' : mode} custom={dir} initial={false}>

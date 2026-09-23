@@ -2,15 +2,15 @@
 
 A recreation of the noon desktop wishlist page (Figma file `bGeam4dYWnlJLz0uJ91DdQ`,
 panel frame `419:535726`) with a live saved-items panel in the middle, built to
-review **three collection-switch transitions** side by side.
+review **four collection-switch transitions** side by side.
 
 The page chrome (top nav, category bar, list switcher, help band, footer) is
 static. Only the panel is interactive.
 
-## The three versions
+## The four versions
 
-Switch with the dark pill at the bottom of the page, the `1`–`3` keys, or
-`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=3`), so a link opens on
+Switch with the dark pill at the bottom of the page, the `1`–`4` keys, or
+`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=4`), so a link opens on
 a specific version.
 
 | | Version | What moves | Feel |
@@ -18,13 +18,14 @@ a specific version.
 | V1 | **Unfurl** | Vertical travel only. The grid slides 44px along the rail's direction and each row adds 20px of its own, staggered 55ms so the leading row settles first. No scale. | Content arriving along the rail |
 | V2 | **Deal** | The old cards gather into a tilted stack on the first slot, then the new ones are dealt out of it one by one. | Cards handled on a table |
 | V3 | **Carousel** | A vertical carousel, timed off the reference video frame by frame. The sections sit one after another on a track: the outgoing one slides up and shrinks to 0.75 as it leaves; the next, right behind it, slides up and grows to full size as it arrives, both on one curve and both scaling from their left edge so they stay aligned to the rail. It's one real track: the strip is the only thing that moves, so switching again mid-flight just redirects it and sections never land on top of each other — cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s. | Paging through a stack of sections |
+| V4 | **Stack** | The collections are sheets in a pile, first on top. Going down the rail peels the top sheet up and off (it stays solid and casts a soft shadow) while the one beneath comes forward from 0.95; going up lays it back down on top. One critically damped spring; a scroll flick hands its speed to the peel. | Leafing through a pile of sheets |
 
 V2 and V3 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would
 collide otherwise. V2's grid always fits, so it never clips or fades at the
 edges.
 
-Common to all three:
+Common to all four:
 - **Live link:** https://wishlist-web-ivory.vercel.app — every push to `main` redeploys it.
 - **Scroll switches collections**, anywhere over the panel (rail included). One flick is one switch; a second flick — even while the first one's trackpad momentum is still running — or a flick back the other way is read straight away. The grid stretches with a rubber band before switching; V1 and V3 also carry your scroll speed into the transition.
 - **The heading changes with the version.** In V1 and V3 it blur-morphs: the old folder name dissolves into a blur while the new one sharpens out of it, in the same spot. V2 has no blur anywhere, so there the new name is dealt in letter by letter, left to right in the order the cards are dealt, each letter settling down from just above — no tilt.
