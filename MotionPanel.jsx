@@ -13,7 +13,7 @@
  * Bar: Emil + Apple — transform/opacity/filter only, springs, reduced-motion.
  */
 import React, { useState } from 'react';
-import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useMotionValue, useTransform, useVelocity, animate } from 'framer-motion';
+import { motion, AnimatePresence, LayoutGroup, useReducedMotion, useMotionValue, useTransform, animate } from 'framer-motion';
 
 /* Where the product imagery lives, relative to the HOST page — the harness sits
    two levels down from assets/, the shipped page sits beside it. */
@@ -50,16 +50,12 @@ const SPRING = { type:'spring', stiffness:320, damping:28 };   // motion-lab sli
 const MORPH  = { type:'spring', stiffness:280, damping:30 };   // layoutId travel
 const BLOOM  = { type:'spring', stiffness:300, damping:26 };
 const EASE_OUT = [0.23, 1, 0.32, 1];
-/* V3 · Scrubbed. 420px of wheel moves one whole collection; the sheet follows
-   the gesture on a critically damped spring (smooths mouse-wheel notches into
-   motion instead of steps), and a release past 20% commits. */
-const SCRUB_DIST = 420;
-const SCRUB_COMMIT = 0.2;
-const SCRUB_FOLLOW = { type:'spring', stiffness:520, damping:46 };
-const SCRUB_SETTLE = { type:'spring', stiffness:240, damping:30 };
-/* V4 · Feed. A click glides the scroll position there — overdamped so a long
-   scroll never overshoots its section. */
-const FEED_GLIDE = { type:'spring', stiffness:170, damping:28 };
+/* The blue marker's two ends. The lead is fast and lands early (the marker
+   stretches across both rows); the trail is a touch slower than the white row
+   so the marker contracts back to size just as the switch settles. */
+const NOTCH_TOP = 37, NOTCH_H = 22;
+const NOTCH_LEAD  = { type:'spring', stiffness:900, damping:56 };
+const NOTCH_TRAIL = { type:'spring', stiffness:260, damping:30, delay:0.04 };
 
 /* Rail preview — the design's "3 or more" stack (68x56): two cards rotated
    +-8deg behind a larger centre card. Every number is from frame 419:535726.
@@ -78,15 +74,27 @@ function FolderPreview({ items }) {
   );
 }
 
-function CardInner({ p }) {
+/* V4 · Photo — motion lives INSIDE the card: the photo settles from a slight
+   zoom while the frame, gutters and text block stay put. .mp-top clips it, so
+   the card itself never grows (which would read as V2). Cutouts get a smaller
+   zoom than lifestyle photos — scaling a product on white reads as the product
+   itself swelling. Only these two children carry variants; they inherit
+   enter/center from the cell, which staggers them 60ms apart. */
+const photoV = (fit) => ({ enter:{ scale: fit === 'contain' ? 1.04 : 1.08 },
+  center:{ scale:1, transition:{ duration:0.42, ease:[0.23, 1, 0.32, 1] } } });
+const bottomV = { enter:{ opacity:0, y:4 }, center:{ opacity:1, y:0, transition:{ duration:0.24, ease:[0.23, 1, 0.32, 1] } } };
+
+function CardInner({ p, settle = false }) {
+  const Img = settle ? motion.img : 'img';
+  const Bottom = settle ? motion.div : 'div';
   return (
     <div className="mp-card">
       <div className="mp-top">
-        <img className="mp-photo" data-fit={p.fit} src={IMG(p.img)} alt="" />
+        <Img className="mp-photo" data-fit={p.fit} src={IMG(p.img)} alt="" {...(settle ? { variants: photoV(p.fit) } : null)} />
         <div className="mp-pager"><i className="on"/><i/><i className="sm"/><i className="xs"/></div>
         <div className="mp-kebab"><img src={IMG('73447.svg')} alt=""/></div>
       </div>
-      <div className="mp-bottom">
+      <Bottom className="mp-bottom" {...(settle ? { variants: bottomV } : null)}>
         <div style={{display:'flex',flexDirection:'column',gap:6}}>
           <div style={{display:'flex',flexDirection:'column',gap:4}}>
             <p className="mp-name">{p.name}</p>
@@ -99,29 +107,9 @@ function CardInner({ p }) {
           <span className="mp-btnP"><img src={IMG('d85fd.svg')} alt=""/>Add to cart</span>
           <span className="mp-btnI"><img src={IMG('7394a.svg')} alt=""/></span>
         </div>
-      </div>
+      </Bottom>
     </div>
   );
-}
-
-/* V3 · Scrubbed — one collection per sheet, stacked. `pos` is the fractional
-   collection index. A sheet ahead of it (d > 0) waits one page below and slides
-   up over the current one as pos approaches; a sheet behind it (d < 0) sinks,
-   drifts up at a quarter of the rate and fades out as it is covered, so the
-   stack reads as physical depth. Going back runs the same maths in reverse:
-   the current sheet slides down and the one beneath rises to meet you.
-   Fully covered sheets reach opacity 0 continuously, so nothing can ever peek
-   through the incoming sheet's rounded corners at rest. */
-const PAGE_GAP = 24;
-function Sheet({ i, pos, hRef, children }) {
-  const transform = useTransform(pos, (p) => {
-    const d = i - p, H = hRef.current;
-    if (d >= 0) return `translateY(${(d * (H + PAGE_GAP)).toFixed(2)}px)`;
-    const k = Math.min(1, -d);
-    return `translateY(${(-k * H * 0.22).toFixed(2)}px) scale(${(1 - 0.05 * k).toFixed(4)})`;
-  });
-  const opacity = useTransform(pos, (p) => { const d = i - p; return d >= 0 ? 1 : 1 - Math.min(1, -d); });
-  return <motion.div className="mp-sheet" style={{ transform, opacity, zIndex: i + 1 }}>{children}</motion.div>;
 }
 
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
@@ -130,10 +118,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [style, setStyle] = useState(fixedStyle || 'morph'); // harness picker drives this
   const [mode, setMode] = useState(fixedMode || 'wait');     // wait | popLayout
   const reduce = useReducedMotion();
-  // V3/V4 are position-driven rather than switch-driven: scroll and clicks move
-  // one fractional index and everything, rail included, reads from it.
-  const styleRef = React.useRef(style); styleRef.current = style;
-  const continuous = style === 'scrub' || style === 'feed';
 
   // let the harness picker drive `style` — skipped when a style is pinned
   React.useEffect(() => {
@@ -147,16 +131,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const col = COLLECTIONS[active];
   // {v} handed from a scroll gesture to the entrance spring; null for a click.
   const launchRef = React.useRef(null);
-  const select = (i) => {
-    if (i===active) return;
-    launchRef.current = null;
-    if (styleRef.current === 'feed') { feedGoRef.current?.(i); return; }
-    if (styleRef.current === 'scrub') { scrubGoRef.current?.(i); return; }
-    setDir(Math.sign(i-active)); setActive(i);
-  };
-  // Set by the V3/V4 machinery further down; read by select() and the wheel.
-  const feedGoRef = React.useRef(null), scrubGoRef = React.useRef(null);
-  const scrubWheelRef = React.useRef(null), feedAnimRef = React.useRef(null);
+  const select = (i) => { if (i===active) return; launchRef.current = null; setDir(Math.sign(i-active)); setActive(i); };
 
   /* ---- scroll drives the switch ----
      The grid scrolls normally; only an *overscroll* past an edge changes
@@ -212,10 +187,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
 
     const onWheel = (e) => {
       if (!e.deltaY) return;
-      // V4 is plain native scrolling — just cancel any click-driven glide.
-      if (styleRef.current === 'feed') { feedAnimRef.current?.stop(); el.style.scrollSnapType = ''; return; }
-      // V3 owns the gesture outright: the wheel IS the transition.
-      if (styleRef.current === 'scrub') { scrubWheelRef.current?.(e); return; }
       const down = e.deltaY > 0;
       const atEdge = down
         ? el.scrollTop + el.clientHeight >= el.scrollHeight - 2
@@ -328,7 +299,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const firstRun = React.useRef(true);
   React.useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
-    if (styleRef.current === 'scrub' || styleRef.current === 'feed') return;
     setMoving(true);
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
@@ -433,6 +403,50 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     center: ({ delay }) => ({ scale:1, transition:{ scale:{ type:'spring', stiffness:300, damping:30, delay } } }),
     exit: { scale: reduce ? 1 : 0.95, transition:{ scale:{ duration:0.2, ease:EASE_OUT } } },
   };
+  /* Column-aware stagger for V3/V4. V1/V2 stagger by row, so on Home decor
+     (one row) and Sneakers (one card) their choreography never shows. Walking
+     the columns as well puts a ripple on every collection. Rows are ordered by
+     direction exactly like rowDelay. */
+  const gridDelay = (i, n, colStep, rowStep) => {
+    if (reduce) return 0;
+    const rows = Math.ceil(n / COLS), row = Math.floor(i / COLS), col = i % COLS;
+    return col * colStep + (dir > 0 ? row : rows - 1 - row) * rowStep;
+  };
+
+  /* V3 · Reveal. Each card is uncovered in place by an edge travelling in the
+     scroll direction — from the bottom when you go down the rail, from the top
+     when you go up — rippling across the columns. Nothing travels or scales.
+     clip-path is the sanctioned fourth property; `round 12px` keeps the card's
+     corners during the wipe. 340ms, not the skill recipe's 600ms: that recipe
+     is for marketing reveals, and this is a control you use. The grid itself
+     doesn't fade in — a fade would wash out the edge while it's travelling. */
+  const CLIP_FULL = 'inset(0% 0% 0% 0% round 12px)';
+  const revealGridV = {
+    enter: { opacity:1, filter:'blur(0px)' },
+    center: { opacity:1, filter:'blur(0px)' },
+    exit: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(3px)', transition:{ duration:0.16, ease:EASE_OUT } },
+  };
+  const revealCardV = {
+    enter: ({ d }) => ({ clipPath: reduce ? CLIP_FULL : (d > 0 ? 'inset(100% 0% 0% 0% round 12px)' : 'inset(0% 0% 100% 0% round 12px)'),
+                         opacity: reduce ? 0 : 1 }),
+    center: ({ delay }) => ({ clipPath: CLIP_FULL, opacity:1,
+      transition:{ clipPath:{ duration:0.34, ease:EASE_OUT, delay }, opacity:{ duration:0.2, delay } } }),
+  };
+
+  /* V4 · Photo. Cards fade in where they stand; inside each, the photo settles
+     and then the text arrives (photoV / bottomV above). An 8px grid hint
+     carries direction. */
+  const photoGridV = {
+    enter: (d) => ({ opacity:0, y: reduce ? 0 : (d > 0 ? 8 : -8), filter:'blur(0px)' }),
+    center: { opacity:1, y:0, filter:'blur(0px)', transition:{ opacity:{ duration:0.2 }, y:{ ...SPRING } } },
+    exit: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(3px)', transition:{ duration:0.16, ease:EASE_OUT } },
+  };
+  const photoCardV = {
+    enter: { opacity:0 },
+    center: ({ delay }) => ({ opacity:1,
+      transition:{ opacity:{ duration:0.2, ease:EASE_OUT, delay }, delayChildren: delay, staggerChildren: 0.06 } }),
+  };
+
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -441,135 +455,47 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   };
 
   const isSharedGrid = style === 'morph' || style === 'bloom';
-  const unfurl = style === 'slide' || style === 'slideDepth';
+  /* Per-style grid + card choreography for the staggered family. */
+  const STAGGERED = {
+    slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
+    slideDepth: { grid: slideDepthV, card: cardDepthV,  delay: (i, n) => rowDelay(i, n) },
+    reveal:     { grid: revealGridV, card: revealCardV, delay: (i, n) => gridDelay(i, n, 0.04, 0.03) },
+    photo:      { grid: photoGridV,  card: photoCardV,  delay: (i, n) => gridDelay(i, n, 0.035, 0.02), settle: true },
+  };
+  const per = STAGGERED[style];
+  const unfurl = !!per;
 
-  /* ---- one position to drive them all ----
-     `pos` is the fractional collection index. The rail's selection layer reads
-     it in every mode, so in V3/V4 the white row and its corners glide BETWEEN
-     folders continuously instead of jumping. V1/V2 spring it to `active` on
-     each switch; V3 moves it with the wheel and clicks; V4 derives it from the
-     scroll position. */
-  const N = COLLECTIONS.length;
+  /* ---- rail selection ----
+     `pos` is the fractional collection index the white selection row sits at.
+     It springs to `active` on every switch, on the same spring as the grid. */
   const pos = useMotionValue(0);
   const railTransform = useTransform(pos, (v) => `translateY(${(v * RAIL_ROW_H).toFixed(2)}px)`);
-  /* Apple-style stretch on the blue marker, driven by velocity: the faster the
-     selection travels, the longer the marker, and the extra length trails
-     back toward the folder it left. Velocity rather than a fixed keyframe, so
-     it works identically for clicks, the V3 scrub and the V4 scroll, and it
-     relaxes to 22px by itself as the motion settles. Capped at 2.8x — a hint,
-     not a smear. Anchoring on the LEADING edge is done with a counter-translate
-     (half the added length) so transform-origin never has to flip. */
-  const posVel = useVelocity(pos);
-  const NOTCH_H = 22;
-  const notchTransform = useTransform(posVel, (v) => {
-    if (reduce) return 'none';
-    const k = 1 + Math.min(1.8, Math.abs(v) * 0.26);
-    const shift = -Math.sign(v) * (NOTCH_H / 2) * (k - 1);
-    return `translateY(${shift.toFixed(2)}px) scaleY(${k.toFixed(3)})`;
-  });
   React.useEffect(() => {
-    if (continuous) return;
     const c = animate(pos, active, reduce ? { duration:0 } : SPRING);
     return () => c.stop();
-  }, [active, continuous]);
+  }, [active]);
 
-  // In V3/V4 the heading follows whichever collection is nearer on screen.
-  const [liveIdx, setLiveIdx] = useState(0);
-  React.useEffect(() => pos.on('change', (v) => {
-    if (styleRef.current !== 'scrub' && styleRef.current !== 'feed') return;
-    const a = Math.max(0, Math.min(N - 1, Math.round(v)));
-    setLiveIdx((cur) => (cur === a ? cur : a));
-    if (styleRef.current === 'scrub') {
-      // A sheet edge mid-stage means content is crossing the panel edge.
-      const f = Math.abs(v - Math.round(v));
-      wrapRef.current?.style.setProperty('--fade-pull', Math.min(30, f * 80).toFixed(1) + 'px');
-    }
-  }), []);
+  /* ---- the blue marker: stretch, then contract ----
+     Two ends on two springs, both heading for the new folder. The lead lands
+     early, so the marker stretches to span the row it left and the row it is
+     going to; the trail lands as the white row settles, contracting it back to
+     22px exactly as the switch finishes. Whichever end is ahead is the lead, so
+     direction takes care of itself: min() is the top, max() the bottom. A
+     second switch mid-flight retargets both from where they are.
 
-  /* ---- V3 · Scrubbed ---- */
-  const pageHRef = React.useRef(988);
+     Height is animated directly rather than scaleY: stretching a 4px bar 5x
+     with scale smears its rounded end into a long taper. It is a tiny
+     absolutely-positioned element with nothing laid out around it, so the cost
+     is one small paint — the same exception the picker spec makes for width. */
+  const edgeA = useMotionValue(0), edgeB = useMotionValue(0);
   React.useEffect(() => {
-    const el = stageRef.current; if (!el) return;
-    const measure = () => { pageHRef.current = el.clientHeight || 988; };
-    measure();
-    const ro = new ResizeObserver(measure); ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  const posAnim = React.useRef(null);
-  const settle = (t) => {
-    posAnim.current?.stop();
-    posAnim.current = animate(pos, t, { ...(reduce ? { duration:0 } : SCRUB_SETTLE),
-      onComplete: () => { if (t !== activeRef.current) { setDir(Math.sign(t - activeRef.current)); setActive(t); } } });
-  };
-  const follow = (t) => { posAnim.current?.stop(); posAnim.current = animate(pos, t, reduce ? { duration:0 } : SCRUB_FOLLOW); };
-  scrubGoRef.current = (i) => settle(i);
-  const sg = React.useRef({ live:false, acc:0, base:0, timer:0, locked:false });
-  scrubWheelRef.current = (e) => {
-    e.preventDefault();
-    const s = sg.current;
-    clearTimeout(s.timer);
-    // After a commit, momentum keeps arriving for a while; swallow it.
-    if (s.locked) { s.timer = setTimeout(() => { s.locked = false; }, 180); return; }
-    if (!s.live) {
-      // Start from wherever the sheets are now — possibly mid-settle — so a new
-      // gesture grabs the motion rather than yanking it back to the last index.
-      const p = pos.get(); s.base = Math.round(p); s.acc = (p - s.base) * SCRUB_DIST; s.live = true;
-    }
-    s.acc += e.deltaY;
-    const raw = s.acc / SCRUB_DIST, side = Math.sign(raw);
-    const has = side > 0 ? s.base + 1 < N : s.base - 1 >= 0;
-    if (has && Math.abs(raw) >= 1) {
-      settle(s.base + side); s.live = false; s.locked = true;
-      s.timer = setTimeout(() => { s.locked = false; }, 180);
-      return;
-    }
-    // Past the first or last collection: a small resistant give, never a switch.
-    follow(has ? s.base + raw : s.base + side * Math.min(0.06, Math.abs(raw) * 0.25));
-    s.timer = setTimeout(() => {
-      const off = pos.get() - s.base;
-      const go = Math.abs(off) >= SCRUB_COMMIT && (off > 0 ? s.base + 1 < N : s.base - 1 >= 0);
-      settle(go ? s.base + Math.sign(off) : s.base);
-      s.live = false;
-    }, 140);
-  };
-
-  /* ---- V4 · Feed ---- */
-  const feedSpy = React.useCallback(() => {
-    if (styleRef.current !== 'feed') return;
-    const el = stageRef.current; if (!el) return;
-    const secs = [...el.querySelectorAll('[data-sec]')]; if (!secs.length) return;
-    const tops = secs.map((x) => x.offsetTop), y = el.scrollTop;
-    let i = 0; while (i < tops.length - 1 && y >= tops[i + 1] - 1) i++;
-    const p = i < tops.length - 1 ? i + Math.max(0, (y - tops[i]) / (tops[i + 1] - tops[i])) : i;
-    pos.set(p);
-    const a = Math.max(0, Math.min(N - 1, Math.round(p)));
-    if (a !== activeRef.current) { setDir(Math.sign(a - activeRef.current)); setActive(a); }
-  }, []);
-  React.useEffect(() => {
-    if (style !== 'feed') return;
-    const el = stageRef.current; if (!el) return;
-    // Room under the last section so it can scroll up to the top like the rest.
-    const fit = () => {
-      const last = el.querySelector('section[data-sec]:last-of-type'), tail = el.querySelector('.mp-feed-tail');
-      if (last && tail) tail.style.height = Math.max(0, el.clientHeight - last.offsetHeight) + 'px';
-      feedSpy();
-    };
-    fit();
-    el.addEventListener('scroll', feedSpy, { passive:true });
-    const ro = new ResizeObserver(fit); ro.observe(el);
-    return () => { el.removeEventListener('scroll', feedSpy); ro.disconnect(); };
-  }, [style, feedSpy]);
-  feedGoRef.current = (i) => {
-    const el = stageRef.current, sec = el?.querySelector(`[data-sec="${i}"]`); if (!sec) return;
-    feedAnimRef.current?.stop();
-    el.style.scrollSnapType = 'none';   // snapping would fight every intermediate frame
-    feedAnimRef.current = animate(el.scrollTop, sec.offsetTop, { ...(reduce ? { duration:0 } : FEED_GLIDE),
-      onUpdate: (v) => { el.scrollTop = v; }, onComplete: () => { el.style.scrollSnapType = ''; } });
-  };
-  const titleCol = continuous ? COLLECTIONS[liveIdx] : col;
-  const staticGrid = (c) => (
-    <div className="mp-grid">{c.items.map((k, j) => <div key={j} className="mp-cell"><CardInner p={PRODUCTS[k]} /></div>)}</div>
-  );
+    if (reduce) { edgeA.set(active); edgeB.set(active); return; }
+    const a = animate(edgeA, active, NOTCH_LEAD);
+    const b = animate(edgeB, active, NOTCH_TRAIL);
+    return () => { a.stop(); b.stop(); };
+  }, [active]);
+  const notchY = useTransform([edgeA, edgeB], ([a, b]) => `translateY(${(Math.min(a, b) * RAIL_ROW_H + NOTCH_TOP).toFixed(2)}px)`);
+  const notchH = useTransform([edgeA, edgeB], ([a, b]) => Math.abs(a - b) * RAIL_ROW_H + NOTCH_H);
 
   return (
     <div className="mp-frame">
@@ -581,10 +507,10 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             the grid's spring so the rail and the cards read as one gesture.
             Full transform string — the x/y shorthands aren't accelerated. */}
         <motion.span className="mp-sel" aria-hidden style={{ transform: railTransform }}>
-          <motion.span className="mp-sel-notch" style={{ transform: notchTransform }} />
           <img className="mp-sel-corner mp-sel-corner-top" src={IMG('37a34.svg')} alt="" />
           <img className="mp-sel-corner mp-sel-corner-bot" src={IMG('37a34.svg')} alt="" />
         </motion.span>
+        <motion.span className="mp-notch" aria-hidden style={{ transform: notchY, height: notchH }} />
         {COLLECTIONS.map((c,i)=>{
           const on = i===active;
           return (
@@ -607,8 +533,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                 popLayout the cards were fully in before the heading had even
                 started moving — same curve, but 200ms apart. */}
             <AnimatePresence mode={mode} initial={false} custom={dir}>
-              <motion.h1 key={titleCol.id} className="mp-title" custom={dir}
-                variants={titleV} initial="enter" animate="center" exit="exit">{titleCol.name}</motion.h1>
+              <motion.h1 key={col.id} className="mp-title" custom={dir}
+                variants={titleV} initial="enter" animate="center" exit="exit">{col.name}</motion.h1>
             </AnimatePresence>
           </div>
           {/* mode toggle — motion-lab. Harness only. */}
@@ -634,19 +560,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             a stale scroll offset — switching into the tall collection wedged the
             exit and froze mode="wait" entirely. */}
         <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined}>
-        <motion.div className="mp-stage" layoutScroll ref={stageRef}
-          data-mode={style === 'scrub' ? 'scrub' : style === 'feed' ? 'feed' : undefined}>
+        <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {style === 'scrub' ? (
-          <div className="mp-sheets">
-            {COLLECTIONS.map((c, i) => <Sheet key={c.id} i={i} pos={pos} hRef={pageHRef}>{staticGrid(c)}</Sheet>)}
-          </div>
-        ) : style === 'feed' ? (
-          <div className="mp-feed">
-            {COLLECTIONS.map((c, i) => <section key={c.id} className="mp-sec" data-sec={i} aria-label={c.name}>{staticGrid(c)}</section>)}
-            <div className="mp-feed-tail" aria-hidden />
-          </div>
-        ) : isSharedGrid ? (
+        {isSharedGrid ? (
           <div className="mp-grid">
             <AnimatePresence mode={mode} custom={dir} initial={false}>
               {col.items.map((key,i)=>{
@@ -682,13 +598,13 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           <div className="mp-grid-wrap">
             <AnimatePresence mode={mode} custom={dir} initial={false}>
               <motion.div key={col.id} className="mp-grid" custom={dir}
-                variants={style==='slide'?slideV:style==='slideDepth'?slideDepthV:style==='depth'?depthV:dissolveV}
+                variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> unfurl ? (
-                  <motion.div key={i} className="mp-cell" variants={style==='slideDepth'?cardDepthV:cardV}
-                    custom={{ d: dir, delay: rowDelay(i, col.items.length) }}>
-                    <CardInner p={PRODUCTS[key]} />
+                  <motion.div key={i} className="mp-cell" variants={per.card}
+                    custom={{ d: dir, delay: per.delay(i, col.items.length) }}>
+                    <CardInner p={PRODUCTS[key]} settle={!!per.settle} />
                   </motion.div>
                 ) : (
                   <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>

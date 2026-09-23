@@ -18,7 +18,10 @@
    into the white content area. At row 0 the top corner sits at y:-20 and the
    frame's overflow:hidden clips it, so it can stay mounted and just travel. */
 .mp-sel{position:absolute;left:0;top:0;width:280px;height:96px;background:#fff;pointer-events:none;z-index:1;will-change:transform}
-.mp-sel-notch{position:absolute;left:2px;top:37px;width:4px;height:22px;border-radius:0 6px 6px 0;background:var(--brand)}
+/* The blue marker lives in the rail, not inside .mp-sel, because its two ends
+   move independently of the white row (see the NOTCH_* springs). top:0 and a
+   22px height at rest; position and length come from JS. */
+.mp-notch{position:absolute;left:2px;top:0;width:4px;height:22px;border-radius:0 6px 6px 0;background:var(--brand);z-index:3;pointer-events:none;will-change:transform,height}
 .mp-sel-corner{position:absolute;left:260px;width:20px;height:20px;display:block}
 .mp-sel-corner-top{top:-20px}
 .mp-sel-corner-bot{top:96px;transform:scaleY(-1)}
@@ -179,24 +182,3 @@
 .mp-btnP img{width:16px;height:16px;display:block}
 .mp-btnI{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;box-shadow:inset 0 0 0 1px var(--surf3)}
 .mp-btnI img{width:20px;height:20px;display:block}
-
-/* ---- V3 · Scrubbed: stacked sheets ----
-   The stage stops scrolling (off-page sheets would otherwise make it
-   scrollable) and becomes the frame the sheets move within. Rounded top and a
-   soft shadow on the leading edge sell a sheet sliding over another; at rest
-   the shadow sits above the stage and is clipped away. */
-.mp-stage{position:relative}
-.mp-stage[data-mode="scrub"]{overflow:hidden}
-.mp-stage[data-mode="scrub"] .mp-presence{height:100%}
-.mp-sheets{position:absolute;inset:0}
-.mp-sheet{position:absolute;inset:0;background:#fff;border-radius:16px 16px 0 0;
-  box-shadow:0 -14px 28px -18px rgba(16,22,40,.22);transform-origin:50% 0;will-change:transform,opacity}
-
-/* ---- V4 · Feed: one continuous scroll ----
-   Proximity snapping settles a scroll onto a section without trapping it. The
-   divider lives in the gap above each section, so the snapped top edge is the
-   grid itself, not a hairline. */
-.mp-stage[data-mode="feed"]{scroll-snap-type:y proximity}
-.mp-sec{position:relative;scroll-snap-align:start}
-.mp-sec + .mp-sec{margin-top:48px}
-.mp-sec + .mp-sec::before{content:"";position:absolute;left:0;top:-24px;width:880px;height:1px;background:var(--surf3)}

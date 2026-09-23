@@ -259,8 +259,8 @@
   <span class="proto-picker-highlight" aria-hidden="true"></span>
   <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
   <button class="proto-picker-item">V2 · Depth</button>
-  <button class="proto-picker-item">V3 · Scrubbed</button>
-  <button class="proto-picker-item">V4 · Feed</button>
+  <button class="proto-picker-item">V3 · Reveal</button>
+  <button class="proto-picker-item">V4 · Photo</button>
 </nav>
 
 <script>
@@ -283,10 +283,10 @@
   mod.setAssetBase('assets/images/');
 
   // Four transitions behind the picker. V1 moves in Y (unfurl), V2 in Z (card
-  // depth), V3 scrubs stacked sheets 1:1 with the trackpad, V4 is one
-  // continuous scroll. The five-variant exploration still lives in
+  // depth), V3 uncovers cards in place (reveal), V4 settles the photo inside
+  // each card (photo). The five-variant exploration still lives in
   // saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'slideDepth', 'scrub', 'feed'];
+  const STYLES = ['slide', 'slideDepth', 'reveal', 'photo'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
