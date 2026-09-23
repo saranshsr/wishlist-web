@@ -334,4 +334,5 @@ html[data-edge-off] .mp-edge{display:none}
 /* Depth shadow: the page nearest you lifts off the panel. */
 .mp-depth-layer .mp-cell{position:relative;isolation:isolate}
 .mp-depth-layer .mp-cell::after{content:"";position:absolute;inset:0;border-radius:12px;pointer-events:none;z-index:-1;
-  box-shadow:0 22px 44px -16px rgba(16,22,40,.30),0 6px 14px -6px rgba(16,22,40,.10);opacity:var(--lift,0)}
+  box-shadow:0 28px 56px -18px rgba(16,22,40,.42),0 8px 18px -8px rgba(16,22,40,.16);opacity:var(--lift,0)}
+.mp-depth-row{position:absolute;left:0;right:0}

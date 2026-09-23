@@ -1220,9 +1220,22 @@ const DEPTH_FLICK = DEPTH_EASE;
 // too much travel). Depth is sold by light instead: the near page casts a
 // soft shadow under its cards (--lift, 0 flat → 1 one step toward you).
 const DEPTH_NEAR = 0.045, DEPTH_FAR = 0.08;
+/* Depth cues beyond scale (24 Sep: "sell the depth more", without more
+   travel): the page ahead is hazed like distance — a little desaturated and
+   brighter — and clears as it arrives; each row sits at its own depth, the
+   lower row travelling 30% further through it, so the page reads as layers in
+   space; the page nearer than the panel casts a shadow under its cards. */
+const DEPTH_ROW_SPREAD = 0.15;   // kept small: "I do not need much travel of the cards"
+function DepthRow({ c, r, k, p }) {
+  const f = 1 + r * DEPTH_ROW_SPREAD;
+  const scale = useTransform(p, (v) => { const d = k - v, m = Math.min(1, Math.abs(d)) * f; return d < 0 ? 1 + DEPTH_NEAR * m : 1 - DEPTH_FAR * m; });
+  return (
+    <motion.div className="mp-depth-row" style={{ scale, top: r * ROW_PITCH, transformOrigin: `50% ${-r * ROW_PITCH}px` }}>
+      <DocRow c={c} r={r} />
+    </motion.div>
+  );
+}
 function DepthLayer({ k, c, p, role, span }) {
-  // role: 'to' (the page arriving), 'from' (the page leaving), or null.
-  const scale = useTransform(p, (v) => { const d = k - v, m = Math.min(1, Math.abs(d)); return d < 0 ? 1 + DEPTH_NEAR * m : 1 - DEPTH_FAR * m; });
   // Fades are measured as a share of the whole trip (span), so a jump across
   // two collections hands over exactly like a single step. The arriving page
   // starts at 5% and is full by 50%; the leaving one is gone by 45%.
@@ -1233,14 +1246,16 @@ function DepthLayer({ k, c, p, role, span }) {
     return a < 0.001 ? 1 : 0;
   });
   const lift = useTransform(p, (v) => { const d = k - v; return d < 0 ? Math.min(1, -d) : 0; });
-  const filter = useTransform(p, (v) => role === 'from' ? `blur(${Math.min(2, Math.abs(k - v) * 5).toFixed(2)}px)` : 'blur(0px)');
-  const on = role === 'to' || (role === null && opacity.get() > 0.5);
+  const filter = useTransform(p, (v) => {
+    const d = k - v, m = Math.min(1, Math.abs(d));
+    if (role === 'from') return `blur(${Math.min(2, m * 5).toFixed(2)}px)`;
+    if (d > 0) return `saturate(${(1 - 0.35 * m).toFixed(3)}) brightness(${(1 + 0.06 * m).toFixed(3)})`;
+    return 'none';
+  });
   return (
     <motion.div className="mp-depth-layer" aria-hidden={role !== 'to'}
-      style={{ scale, opacity, filter, '--lift': lift, zIndex: role === 'to' ? 2 : 1, pointerEvents: role === 'to' ? 'auto' : 'none' }}>
-      <div className="mp-grid">
-        {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
-      </div>
+      style={{ opacity, filter, '--lift': lift, height: sectionH(c.items.length), zIndex: role === 'to' ? 2 : 1, pointerEvents: role === 'to' ? 'auto' : 'none' }}>
+      {Array.from({ length: docRows(k) }, (_, r) => <DepthRow key={r} c={c} r={r} k={k} p={p} />)}
     </motion.div>
   );
 }
