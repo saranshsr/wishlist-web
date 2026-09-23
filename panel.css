@@ -299,3 +299,18 @@ html[data-edge-off] .mp-edge{display:none}
 .mp-fold-strip{position:absolute;left:0;right:0;overflow:hidden;background:#fff;transform-origin:50% 0;backface-visibility:hidden;will-change:transform}
 .mp-fold-inner{position:absolute;left:0;right:0;top:0}
 .mp-fold-shade{position:absolute;inset:0;background:#101628;pointer-events:none}
+
+/* ---- GOOEY CSS ---- */
+/* V4 · Gooey Merge. The liquid is one canvas under the grid (the grid plus a
+   32px bleed for the current's reach — the stage stops clipping for this
+   style, like Deal), shown only while a switch is in flight (data-live). The grid sits
+   above it (positioned, later in order), so at rest the page is the plain
+   grid and the canvas isn't even laid out. */
+.mp-goo{position:relative}
+.mp-goo-canvas{position:absolute;left:-32px;top:-32px;width:944px;height:1052px;display:none;pointer-events:none}
+.mp-goo[data-live] .mp-goo-canvas{display:block}
+.mp-goo .mp-grid{position:relative}
+.mp-goo .mp-cell{transform-origin:50% 50%}
+/* Reduced motion crossfade: the outgoing grid sits over the incoming one. */
+.mp-goo .mp-goo-ghost{position:absolute;left:0;top:0;z-index:1;pointer-events:none}
+/* ---- GOOEY CSS ---- */

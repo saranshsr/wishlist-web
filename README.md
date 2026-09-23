@@ -2,15 +2,15 @@
 
 A recreation of the noon desktop wishlist page (Figma file `bGeam4dYWnlJLz0uJ91DdQ`,
 panel frame `419:535726`) with a live saved-items panel in the middle, built to
-review **six collection-switch transitions** side by side.
+review **seven collection-switch transitions** side by side.
 
 The page chrome (top nav, category bar, list switcher, help band, footer) is
 static. Only the panel is interactive.
 
-## The six versions
+## The seven versions
 
-Switch with the dark pill at the bottom of the page, the `1`–`6` keys, or
-`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=6`), so a link opens on
+Switch with the dark pill at the bottom of the page, the `1`–`7` keys, or
+`←` / `→`. The choice is kept in the URL (`?v=1` … `?v=7`), so a link opens on
 a specific version.
 
 | | Version | What moves | Feel |
@@ -21,13 +21,14 @@ a specific version.
 | V4 | **Liquid Tab** | The selected tab and its page are one white body. On a switch the tab stretches from its old row toward the new one, its left edge pinching into a liquid neck that stays joined to the page, then snaps shut. The page runs on the same two springs: the collection you leave is pulled away with the leading edge, the one you arrive at is drawn in with the trailing edge, so the page opens a gap exactly while the tab is stretched. Scroll pulls it like honey: overscrolling already stretches the tab toward the next row (let go and it springs back), and a flick's speed goes into the stretch. While a collection moves, its rail side leads — the page pours through the tab — and it relaxes with a small jelly settle. Each collection carries its own heading. | Tab and page as one liquid body |
 | V5 | **Spring Chain** | Every heading and row is a link in one physical chain (simulated per frame), pulled from the front of the collection you're leaving. The links behind hang back in proportion to speed, so the gaps open as it sets off, then gently bunch up as it brakes and settle — stretch, then compress. Slack is capped so nothing ever touches. Each collection carries its own heading. | The page travelling as one physical body |
 | V6 | **Origami** | The page is one sheet of paper, heading and cards together. A switch folds it up like an accordion — ~260px strips, alternate creases tipping away, faces shading as they turn from the light — into a thin packet at the top; the new collection is printed on the same sheet and it unfolds back down on a spring with enough give to flex once before it lies flat. One number, the fold angle, drives every strip, so a switch mid-fold just folds from wherever the sheet is. | One sheet folding and unfolding |
+| V7 | **Gooey** | The cards melt. Each card's content dissolves to a pale bead, the gutters fill and the beads run together into one liquid sheet (WebGL, smooth-blended rounded rects), the sheet reshapes to the new layout — spare cards pour into a neighbour, new ones are drawn out of one — then tears back into cards as the new content resolves on each. | One substance reshaping itself |
 
 V2 and V3 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would
 collide otherwise. V2's grid always fits, so it never clips or fades at the
 edges.
 
-Common to all six:
+Common to all seven:
 - **Live link:** https://wishlist-web-ivory.vercel.app — every push to `main` redeploys it.
 - **Scroll switches collections**, anywhere over the panel (rail included). One flick is one switch; a second flick — even while the first one's trackpad momentum is still running — or a flick back the other way is read straight away. The grid stretches with a rubber band before switching; V1 and V3 also carry your scroll speed into the transition.
 - **The heading changes with the version.** In V1 and V3 it blur-morphs: the old folder name dissolves into a blur while the new one sharpens out of it, in the same spot. V2 has no blur anywhere, so there the new name is dealt in letter by letter, left to right in the order the cards are dealt, each letter settling down from just above — no tilt.

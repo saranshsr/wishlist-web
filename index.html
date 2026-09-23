@@ -288,13 +288,14 @@
   <button class="proto-picker-item">V4 · Liquid Tab</button>
   <button class="proto-picker-item">V5 · Spring Chain</button>
   <button class="proto-picker-item">V6 · Origami</button>
+  <button class="proto-picker-item">V7 · Gooey</button>
 </nav>
 
 <div class="proto-edge" role="radiogroup" aria-label="Edge blur and fade">
   <span class="proto-edge-label">Edge blur &amp; fade</span>
   <button class="proto-picker-item" role="radio" data-edge="on" data-active aria-checked="true">On</button>
   <button class="proto-picker-item" role="radio" data-edge="off" aria-checked="false">Off</button>
-  <span class="proto-edge-note">V2 has no edge fade to compare</span>
+  <span class="proto-edge-note">This version has no edge fade to compare</span>
 </div>
 
 <script>
@@ -321,7 +322,7 @@
   // to the rail; V4 Liquid Tab and V5 Spring Chain treat the page
   // as one document (the tab and its page are one body / one physical chain). The wider exploration lives in lab.html and
   // saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'deal', 'carousel', 'liquid', 'chain', 'origami'];
+  const STYLES = ['slide', 'deal', 'carousel', 'liquid', 'chain', 'origami', 'gooey'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
@@ -343,8 +344,10 @@
     const url = new URL(location); url.searchParams.set('v', i + 1); history.replaceState(null, '', url);
     mount(i);
     // V2 (Deal) never clips, so it has no edge treatment to compare.
-    edgeBox.toggleAttribute('data-inert', STYLES[i] === 'deal');
-    edgeBox.title = STYLES[i] === 'deal' ? 'V2 has no edge fade to compare' : '';
+    // V2, V6 and V7 never clip, so they have no edge treatment to compare.
+    const noEdge = ['deal', 'origami', 'gooey'].includes(STYLES[i]);
+    edgeBox.toggleAttribute('data-inert', noEdge);
+    edgeBox.title = noEdge ? 'This version has no edge fade to compare' : '';
   }
 
   /* Edge blur & fade toggle. Flips one attribute on <html>; panel.css drops

@@ -48,7 +48,7 @@ const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PI
 /* Card-table styles: the grid always fits the stage, so it never scrolls and
    nothing needs the edge fade. Their cards tilt, stack and turn past the grid's
    edges, so the stage stops clipping for them (data-open) — no mask, no blur. */
-const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami']);
+const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss', 'origami', 'gooey']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
 const TRACK_GAP = 48, TRACK_SCALE = 0.75;   // V3 · Carousel (measured)
@@ -695,6 +695,268 @@ function OrigamiTrack({ active, reduce, launch, onSettle }) {
 }
 /* ==== end V6 ==== */
 
+/* ---- GOOEY START ---- */
+/* V4 · Gooey Merge — the page is one substance. On a switch the cards'
+   content dissolves and what is left is liquid: every card is a bead in one
+   signed-distance field whose blend radius swells, so the gutters fill and
+   the grid runs together into a single sheet. The sheet flows to the new
+   layout — a card with no slot in it pours into its nearest neighbour, a card
+   the new layout needs is drawn out of one — and as the blend relaxes the
+   sheet tears back into cards, the new content resolving on each as it lands.
+   There are only ever seven beads (the largest collection). A card that isn't
+   shown is a bead parked inside its nearest shown card, invisible in the
+   union, so nothing appears or disappears: beads only merge and split.
+   Each bead's four edges run on their own springs; the edge leading in the
+   direction of travel is stiffer than the trailing one, so a moving bead
+   stretches and then contracts (the rail's blue marker does the same). The
+   rail's direction is a current through the whole sheet: down the rail every
+   bead first reaches up (the old content flows out of the top) and the new
+   cards settle up into place from below; up the rail, the mirror image.
+   A switch only retargets springs from where they are, velocity kept, so an
+   interruption bends the flow instead of restarting it.
+   Rendering: one WebGL quad under the grid, drawn only while switching. At
+   rest it is display:none and the grid is the plain grid. */
+const GOO_N = Math.max(...COLLECTIONS.map((c) => c.items.length));
+const GOO_PAD = 32;          // canvas bleed around the grid, for the current's reach
+const GOO_W = COLS * CARD_W + (COLS - 1) * GAP + 2 * GOO_PAD;
+const GOO_H = Math.max(...COLLECTIONS.map((c) => sectionH(c.items.length))) + 2 * GOO_PAD;
+const GOO_R = 12, GOO_ROUND = 56;   // corner radius at rest / extra at full melt: a melting card softens
+const GOO_K = 80;            // blend radius at full melt (px): 20px gutters fuse solid
+const GOO_BEAD = 14;         // px each side a card draws in as it melts — beads, not a slab
+const GOO_PARK = 0.1;        // a parked bead is its host inset 10% a side
+const GOO_DELAY = 0.06, GOO_ROW = 0.045;   // s: content dissolves in place first; then rows, along the rail
+const GOO_LEAD = 20, GOO_TRAIL = 14, GOO_ZETA = 0.96;   // edge springs (rad/s)
+const GOO_M_IN = 17, GOO_M_OUT = 16;                    // melt spring (rad/s)
+const GOO_REACH = 18, GOO_REACH_MS = 150, GOO_SAG = 18; // the current (px, ms)
+const GOO_FLING = 0.5;       // share of a scroll flick's speed the sheet carries into the switch
+const GOO_HOLD = 230;        // ms the melt holds even if nothing travels
+const GOO_ARRIVE = 40;       // px: beads this close to landing let the melt go
+const GOO_OUT = 0.09, GOO_IN = 0.16;   // content fade floors (s, full swing)
+const GOO_FILL = '0.933,0.941,0.961', GOO_SHADE = 0.06;  // #eef0f5; a faint bevel, lit from the top left
+const gooRect = (i) => { const x = (i % COLS) * (CARD_W + GAP), y = Math.floor(i / COLS) * ROW_PITCH; return [x, y, x + CARD_W, y + CARD_H]; };
+const gooHost = (i, n) => {
+  if (i < n) return i;
+  const c = gooRect(i); let best = 0, bd = Infinity;
+  for (let j = 0; j < n; j++) { const r = gooRect(j); const d = Math.hypot(r[0] - c[0], r[1] - c[1]); if (d < bd - 1e-6) { bd = d; best = j; } }
+  return best;
+};
+const gooTarget = (i, n) => {
+  const r = gooRect(gooHost(i, n));
+  if (i < n) return r;
+  const ix = CARD_W * GOO_PARK, iy = CARD_H * GOO_PARK;
+  return [r[0] + ix, r[1] + iy, r[2] - ix, r[3] - iy];
+};
+const gooClamp = (v) => Math.max(0, Math.min(1, v));
+const gooSmooth = (a, b, x) => { const t = gooClamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+
+const GOO_VS = 'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+const GOO_FS = `precision highp float;
+uniform vec4 uR[${GOO_N}];uniform float uK,uDpr,uH,uRad;
+float sd(vec2 p,vec4 r){vec2 c=(r.xy+r.zw)*.5;vec2 h=max((r.zw-r.xy)*.5,vec2(0.));float rad=min(uRad,min(h.x,h.y));
+  vec2 q=abs(p-c)-h+rad;return length(max(q,0.))+min(max(q.x,q.y),0.)-rad;}
+float field(vec2 p){float k=max(uK,1e-3);float d=1e5;
+  for(int i=0;i<${GOO_N};i++){float di=sd(p,uR[i]);float h=clamp(.5+.5*(d-di)/k,0.,1.);d=mix(d,di,h)-k*h*(1.-h);}
+  return d;}
+void main(){vec2 p=vec2(gl_FragCoord.x,uH-gl_FragCoord.y)/uDpr-${GOO_PAD.toFixed(1)};float d=field(p);
+  if(d>1.){gl_FragColor=vec4(0.);return;}
+  float lit=clamp((field(p+vec2(-3.,-4.))-d)/5.,-1.,1.)*smoothstep(-20.,0.,d);
+  vec3 col=vec3(${GOO_FILL})*(1.+${GOO_SHADE}*lit);
+  col=mix(col,vec3(.878,.894,.925),smoothstep(-1.6,-.2,d)*.7);
+  float a=clamp(.5-d*uDpr,0.,1.);gl_FragColor=vec4(col*a,a);}`;
+
+function gooGL(canvas) {
+  const gl = canvas.getContext('webgl', { premultipliedAlpha: true, antialias: false, alpha: true });
+  if (!gl) return null;
+  const sh = (t, src) => { const o = gl.createShader(t); gl.shaderSource(o, src); gl.compileShader(o); return o; };
+  const pr = gl.createProgram();
+  gl.attachShader(pr, sh(gl.VERTEX_SHADER, GOO_VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, GOO_FS)); gl.linkProgram(pr);
+  if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) return null;
+  gl.useProgram(pr);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const a = gl.getAttribLocation(pr, 'a'); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
+  const u = (n) => gl.getUniformLocation(pr, n);
+  const uR = u('uR'), uK = u('uK'), uDpr = u('uDpr'), uH = u('uH'), uRad = u('uRad');
+  const R = new Float32Array(GOO_N * 4);
+  return (rects, k, dpr, rad) => {
+    rects.forEach((r, i) => R.set(r, i * 4));
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform4fv(uR, R); gl.uniform1f(uK, k); gl.uniform1f(uDpr, dpr); gl.uniform1f(uH, canvas.height); gl.uniform1f(uRad, rad);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  };
+}
+
+// A scalar spring toward `to` (critically damped), stepped in place.
+const gooSpring = (o, to, w, dt) => { o.v += (-w * w * (o.x - to) - 2 * w * o.v) * dt; o.x += o.v * dt; };
+
+function GooeyMerge({ active, dir, launch, onSettle }) {
+  const rootRef = React.useRef(null), canvasRef = React.useRef(null), gridRef = React.useRef(null);
+  const [shown, setShown] = useState(active);
+  const S = React.useRef(null);
+  if (!S.current) {
+    const n = COLLECTIONS[active].items.length;
+    S.current = {
+      beads: Array.from({ length: GOO_N }, (_, i) => {
+        const t = gooTarget(i, n);
+        return { e: t.slice(), v: [0, 0, 0, 0], t, w: [GOO_LEAD, GOO_LEAD, GOO_LEAD, GOO_LEAD], next: null, at: 0, park: i >= n, host: gooRect(gooHost(i, n)) };
+      }),
+      melt: { x: 0, v: 0 }, reach: { x: 0, v: 0 }, sag: { x: 0, v: 0 },
+      rects: [], op: [], t0: 0, dir: 1, active, shown: active, raf: 0, last: 0, draw: null, dpr: 1, swapping: false,
+    };
+  }
+  const s = S.current;
+  s.onSettle = onSettle;
+
+  // The shape each bead is drawn at this frame: its springs, drawn in as it
+  // melts, and pulled along the current.
+  const shape = (b) => {
+    const m = gooClamp(s.melt.x), bead = GOO_BEAD * m;
+    const up = s.dir > 0 ? GOO_REACH * s.reach.x : GOO_SAG * s.sag.x;     // top edge, outward
+    const down = s.dir > 0 ? GOO_SAG * s.sag.x : GOO_REACH * s.reach.x;   // bottom edge, outward
+    return [b.e[0] + bead, b.e[1] + bead - up, b.e[2] - bead, b.e[3] - bead + down];
+  };
+
+  // Content rides its bead and fades with it. Written straight to the DOM:
+  // this runs every frame and must not re-render React.
+  const writeCells = React.useCallback((rest) => {
+    const g = gridRef.current; if (!g) return;
+    [...g.children].forEach((el, i) => {
+      if (rest) { el.style.transform = ''; el.style.opacity = ''; return; }
+      const r = s.rects[i], h = gooRect(i);
+      const sx = Math.max(0, (r[2] - r[0]) / CARD_W), sy = Math.max(0, (r[3] - r[1]) / CARD_H);
+      const tx = (r[0] + r[2] - h[0] - h[2]) / 2, ty = (r[1] + r[3] - h[1] - h[3]) / 2;
+      el.style.transform = `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0) scale(${sx.toFixed(4)},${sy.toFixed(4)})`;
+      el.style.opacity = (s.op[i] ?? 1).toFixed(3);
+    });
+  }, []);
+
+  const frame = React.useCallback((now) => {
+    const dt = Math.min(0.04, Math.max(0, (now - (s.last || now)) / 1000)); s.last = now;
+    const steps = Math.max(1, Math.ceil(dt / 0.004)), h = dt / steps;
+    let far = 0, still = true;
+    s.beads.forEach((b) => {
+      if (b.next && now >= b.at) {
+        const t = b.next; b.next = null;
+        // lead/trail: the edge on the side the bead is heading is the stiff one
+        const dx = (t[0] + t[2]) - (b.e[0] + b.e[2]), dy = (t[1] + t[3]) - (b.e[1] + b.e[3]);
+        const mid = (GOO_LEAD + GOO_TRAIL) / 2;
+        b.w = [dx < -1 ? GOO_LEAD : dx > 1 ? GOO_TRAIL : mid, dy < -1 ? GOO_LEAD : dy > 1 ? GOO_TRAIL : mid,
+               dx > 1 ? GOO_LEAD : dx < -1 ? GOO_TRAIL : mid, dy > 1 ? GOO_LEAD : dy < -1 ? GOO_TRAIL : mid];
+        b.t = t;
+      }
+      for (let k = 0; k < 4; k++) {
+        const w = b.w[k];
+        for (let j = 0; j < steps; j++) { b.v[k] += (-w * w * (b.e[k] - b.t[k]) - 2 * GOO_ZETA * w * b.v[k]) * h; b.e[k] += b.v[k] * h; }
+        if (Math.abs(b.v[k]) > 6) still = false;
+      }
+      // How far a bead still is from landing. For a parked bead only what
+      // still shows outside its host counts: inside it, it's already gone.
+      const T = b.next || b.t, H = b.host;
+      if (b.park) far = Math.max(far, H[0] - b.e[0], H[1] - b.e[1], b.e[2] - H[2], b.e[3] - H[3]);
+      else for (let k = 0; k < 4; k++) far = Math.max(far, Math.abs(b.e[k] - T[k]));
+      if (b.next) far = Math.max(far, GOO_ARRIVE + 1);
+    });
+    // Melt holds while anything is still travelling, then lets the sheet tear.
+    const age = now - s.t0;
+    const hold = age < GOO_HOLD || far > GOO_ARRIVE || s.shown !== s.active;
+    gooSpring(s.melt, hold ? 1 : 0, hold ? GOO_M_IN : GOO_M_OUT, dt);
+    gooSpring(s.reach, hold && age < GOO_REACH_MS ? 1 : 0, 18, dt);
+    gooSpring(s.sag, hold && age >= GOO_REACH_MS ? 1 : 0, 12, dt);
+    s.rects = s.beads.map(shape);
+    // Content: out while the switch is pending, back in as its bead lands and the melt lets go.
+    const nShown = COLLECTIONS[s.shown].items.length;
+    let allOut = true, allIn = true;
+    for (let i = 0; i < nShown; i++) {
+      const b = s.beads[i], r = gooRect(i);
+      const d = Math.max(...b.e.map((v, k) => Math.abs(v - r[k])));
+      const want = s.shown !== s.active ? 0 : (1 - gooSmooth(0.08, 0.4, s.melt.x)) * (1 - gooSmooth(1, 10, d));
+      const o = s.op[i] ?? 1;
+      s.op[i] = want < o ? Math.max(want, o - dt / GOO_OUT) : Math.min(want, o + dt / GOO_IN);
+      if (s.op[i] > 0.001) allOut = false;
+      if (s.op[i] < 0.999) allIn = false;
+    }
+    if (s.shown !== s.active && allOut && !s.swapping) { s.swapping = true; setShown(s.active); }
+    const quiet = [s.melt, s.reach, s.sag].every((o) => Math.abs(o.x) < 0.05 && Math.abs(o.v) < 0.5);
+    if (!hold && quiet && still && far < 1 && allIn && s.shown === s.active) {
+      s.beads.forEach((b) => { b.e = b.t.slice(); b.v = [0, 0, 0, 0]; });
+      [s.melt, s.reach, s.sag].forEach((o) => { o.x = 0; o.v = 0; });
+      s.op = []; s.raf = 0; s.last = 0;
+      writeCells(true);
+      rootRef.current?.removeAttribute('data-live');
+      s.onSettle?.();
+      return;
+    }
+    writeCells(false);
+    s.draw?.(s.rects, GOO_K * gooClamp(s.melt.x), s.dpr, GOO_R + GOO_ROUND * gooClamp(s.melt.x));
+    s.raf = requestAnimationFrame(frame);
+  }, []);
+
+  React.useEffect(() => {
+    const cv = canvasRef.current;
+    s.dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.round(GOO_W * s.dpr); cv.height = Math.round(GOO_H * s.dpr);
+    s.draw = gooGL(cv);   // no WebGL: the content still rides and fades, without the liquid
+    // Draw once now, hidden, so the shader is compiled before the first switch.
+    s.draw?.(s.beads.map((b) => b.e), 0, s.dpr, GOO_R);
+    return () => { cancelAnimationFrame(s.raf); s.raf = 0; };
+  }, []);
+
+  // A switch retargets every bead from wherever it is; rows go in the
+  // direction of travel — down the rail the top row moves first.
+  const first = React.useRef(true);
+  React.useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    const now = performance.now(), n = COLLECTIONS[active].items.length, rows = Math.ceil(GOO_N / COLS);
+    s.active = active; s.t0 = now; s.dir = dir;
+    // A scroll flick hands its speed over (px/s, + = content moving down):
+    // the sheet lurches with the gesture, then the springs take it home.
+    const fling = (launch?.current?.v || 0) * GOO_FLING;
+    s.beads.forEach((b, i) => {
+      b.v[1] += fling; b.v[3] += fling;
+      const row = Math.floor(i / COLS);
+      b.next = gooTarget(i, n); b.park = i >= n; b.host = gooRect(gooHost(i, n));
+      b.at = now + (GOO_DELAY + (dir > 0 ? row : rows - 1 - row) * GOO_ROW) * 1000;
+    });
+    if (!s.raf) { s.last = 0; s.rects = s.beads.map(shape); rootRef.current?.setAttribute('data-live', ''); s.raf = requestAnimationFrame(frame); }
+  }, [active]);
+
+  // New cards mount at their bead's opacity, before paint — never at 1.
+  React.useLayoutEffect(() => { s.shown = shown; s.swapping = false; if (s.raf) { s.op = new Array(GOO_N).fill(0); writeCells(false); } }, [shown]);
+
+  return (
+    <div className="mp-goo" ref={rootRef}>
+      <canvas ref={canvasRef} className="mp-goo-canvas" aria-hidden />
+      <div className="mp-grid" ref={gridRef}>
+        {COLLECTIONS[shown].items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
+      </div>
+    </div>
+  );
+}
+
+/* Reduced motion: no liquid, no travel — a plain 200ms crossfade. */
+function GooeyFade({ active }) {
+  const [ghost, setGhost] = useState(null);
+  const last = React.useRef(active), nonce = React.useRef(0), mounted = React.useRef(false);
+  React.useLayoutEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    setGhost({ k: last.current, n: ++nonce.current }); last.current = active;
+  }, [active]);
+  const cells = (k) => COLLECTIONS[k].items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>);
+  return (
+    <div className="mp-goo">
+      {ghost && (
+        <motion.div key={'g' + ghost.n} className="mp-grid mp-goo-ghost" aria-hidden onUpdate={JS_DRIVEN}
+          initial={{ opacity: 1 }} animate={{ opacity: 0 }} transition={{ duration: 0.2, ease: 'linear' }}
+          onAnimationComplete={() => setGhost((g) => (g && g.n === ghost.n ? null : g))}>{cells(ghost.k)}</motion.div>
+      )}
+      <motion.div key={active} className="mp-grid" onUpdate={JS_DRIVEN}
+        initial={nonce.current ? { opacity: 0 } : false} animate={{ opacity: 1 }} transition={{ duration: 0.2, ease: 'linear' }}>{cells(active)}</motion.div>
+    </div>
+  );
+}
+/* ---- GOOEY END ---- */
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -927,6 +1189,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const firstRun = React.useRef(true);
   React.useEffect(() => {
     if (firstRun.current) { firstRun.current = false; return; }
+    // V7 · Gooey never clips (the stage is open for it), so no edge fade.
+    if (style === 'gooey') return;
     setMoving(true);
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
@@ -1541,7 +1805,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           data-stack={style === 'stack' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {style === 'origami' ? (
+        {style === 'gooey' ? (
+          reduce ? <GooeyFade active={active} /> : <GooeyMerge active={active} dir={dir} launch={launchRef} onSettle={() => setMoving(false)} />
+        ) : style === 'origami' ? (
           <OrigamiTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : style === 'liquid' ? (
           <LiquidTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
