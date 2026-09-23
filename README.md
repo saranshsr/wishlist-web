@@ -31,6 +31,20 @@ Common to all four:
 - **Hovering a folder opens its card stack** slightly.
 - `prefers-reduced-motion` is respected throughout — gentler, not removed.
 
+## Motion lab
+
+`lab.html` (live at https://wishlist-web-ivory.vercel.app/lab.html) keeps V1 · Unfurl
+as the reference and puts four different transitions beside it. Same picker, same
+keys (`1`–`5`, `←` / `→`, `?v=`).
+
+| | Transition | What moves |
+| --- | --- | --- |
+| 1 | **V1 · Unfurl** | The reference, unchanged. |
+| 2 | **Push** | The new grid pushes in along the rail's direction and carries your scroll speed; the old one sinks back (0.95) and fades underneath it. The two overlap. |
+| 3 | **Glide** | Items that are in both collections glide from their old slot to their new one without fading; everything else fades in and out around them. |
+| 4 | **Deal** | The old cards gather onto the first slot like a stack, then the new ones deal out from it, one after another. |
+| 5 | **Folder Flight** | The old cards shrink and fly back into the folder you're leaving; the new ones fly out of the folder you clicked into their slots. Outgoing and incoming overlap. |
+
 ## Run locally
 
 Double-click `start.command`, or:

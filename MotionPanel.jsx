@@ -442,6 +442,66 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   };
   const bloomOrigin = `0px ${active * RAIL_ROW_H + RAIL_ROW_H / 2 - GRID_TOP}px`;
 
+  /* ---- LAB · four more in V1's family: real vertical travel on springs ---- */
+
+  /* Deal and Folder Flight — per-card variants, built per card because the
+     exit target depends on the card's own slot. They are plain objects on
+     purpose: on exit Motion resolves variants with AnimatePresence's `custom`
+     (the dir number), not the card's own, so an exit that read a per-card
+     custom would get a number and break. A plain object never reads custom. */
+  const stackV = ({ i, n, tx, ty, s0, rot, inDelay, outDelay, outDur }) => ({
+    enter:  reduce ? { opacity:0 } : { x:tx, y:ty, scale:s0, rotate:rot, opacity:0 },
+    center: reduce ? { opacity:1, transition:{ duration:0.2 } } : { x:0, y:0, scale:1, rotate:0, opacity:1, transition:{
+      default:{ type:'spring', stiffness:250, damping:27, delay: inDelay },
+      opacity:{ duration:0.12, ease:EASE_OUT, delay: inDelay } } },
+    exit:   reduce ? { opacity:0, transition:{ duration:0.14 } } : { x:tx, y:ty, scale:s0, rotate:rot, opacity:0, transition:{
+      default:{ duration: outDur, ease:[0.77, 0, 0.175, 1], delay: outDelay },
+      opacity:{ duration:0.1, ease:EASE_OUT, delay: outDelay + outDur - 0.1 } } },
+  });
+  // A little tilt per card so a gathered pile reads as a real stack — the same
+  // language as the folder previews in the rail.
+  const tilt = (i) => [-6, 4, -3, 7, -5, 3, -2][i % 7];
+
+  /* Deal — the old cards gather into one tilted stack in the first slot, then
+     the new collection is dealt out of it card by card. Stays inside the grid. */
+  const dealV = (i, n) => {
+    const [cx, cy] = cardCentre(i), [px, py] = cardCentre(0);
+    return stackV({ i, n, tx: px - cx, ty: py - cy, s0: 0.92, rot: i === 0 ? 0 : tilt(i),
+      inDelay: 0.1 + i * 0.026, outDelay: (n - 1 - i) * 0.012, outDur: 0.2 });
+  };
+
+  /* Folder Flight — the old cards fly back into THEIR folder in the rail and
+     tuck under its thumbnail; the new ones fly out of the folder you picked,
+     nearest first. The stage stops clipping for this style (see
+     data-flight), so the cards can actually reach the rail. They pass under the
+     rail's fans and white row (those sit higher in z), which reads as tucking
+     into / emerging from the folder. */
+  const FAN_CX = 20 + 34;   // rail padding + half the 68px stack
+  const flightV = (i, n, folder) => {
+    const [cx, cy] = cardCentre(i);
+    const fx = FAN_CX - GRID_LEFT, fy = folder * RAIL_ROW_H + RAIL_ROW_H / 2 - GRID_TOP;
+    const dist = Math.hypot(fx - cx, fy - cy);
+    const rank = dist / 1000;   // ~0.3–1.2 across the grid: nearest cards go first
+    // Overlapped: the incoming stream leaves the new folder 60ms after the
+    // click while the outgoing stream is still flying home — an exchange
+    // rather than two queued animations, which roughly halves the total.
+    return stackV({ i, n, tx: fx - cx, ty: fy - cy, s0: 0.17, rot: tilt(i),
+      inDelay: 0.06 + rank * 0.12, outDelay: rank * 0.06, outDur: 0.3 });
+  };
+  const holdV = { enter:{ opacity:1 }, center:{ opacity:1 }, exit:{ opacity:1 } };
+
+  /* Push — V1's direction plus V2's depth  /* Push — V1's direction plus V2's depth, overlapped. The new grid rises 80px
+     from below on a spring while the old one drifts up 32px, shrinks to 0.95
+     and fades behind it — a new layer pushed up over the last. */
+  const pushV = {
+    enter: (d)=>({ y: reduce?0:(d>0?80:-80), opacity:0, scale:1, filter: reduce?'blur(0px)':'blur(3px)' }),
+    center:{ y:0, opacity:1, scale:1, filter:'blur(0px)', transition:{
+      y:{ type:'spring', stiffness:280, damping:32, ...(launchRef.current ? { velocity: launchRef.current.v * 80 / 44 } : null) },
+      opacity:{ duration:0.24, ease:EASE_OUT }, filter:{ duration:0.24, ease:EASE_OUT } } },
+    exit:(d)=>({ y: reduce?0:(d>0?-32:32), scale: reduce?1:0.95, opacity:0, filter: reduce?'blur(0px)':'blur(3px)',
+      transition:{ y:{ duration:0.32, ease:EASE_OUT }, scale:{ duration:0.32, ease:EASE_OUT }, opacity:{ duration:0.26, ease:EASE_OUT }, filter:{ duration:0.26 } } }),
+  };
+
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -449,13 +509,16 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     return (dir > 0 ? row : rows - 1 - row) * ROW_STAGGER;
   };
 
-  const isSharedGrid = style === 'morph' || style === 'bloom';
+  const isSharedGrid = style === 'morph' || style === 'bloom' || style === 'glide';
   /* Per-style grid + card choreography for the staggered family. */
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
     slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
     focus:      { grid: focusV,        card: null,           delay: () => 0 },
     railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
+    push:       { grid: pushV,         card: cardV,          delay: (i, n) => rowDelay(i, n) },
+    deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n),           delay: () => 0 },
+    flight:     { grid: holdV,         cardFor: (i, n) => flightV(i, n, active), delay: () => 0 },
   };
   const per = STAGGERED[style];
   const unfurl = !!per;
@@ -467,7 +530,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth') ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'deal') ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -571,12 +634,12 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             scrollable ancestor is this stage. Without it Motion measures against
             a stale scroll offset — switching into the tall collection wedged the
             exit and froze mode="wait" entirely. */}
-        <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined}>
+        <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-flight={style === 'flight' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
         {isSharedGrid ? (
           <div className="mp-grid">
-            <AnimatePresence mode={mode} custom={dir} initial={false}>
+            <AnimatePresence mode={style === 'glide' ? 'popLayout' : mode} custom={dir} initial={false}>
               {col.items.map((key,i)=>{
                 const [cx,cy]=cardCentre(i);
                 if (style==='morph') {
@@ -590,6 +653,26 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                       animate={{ opacity:1, x:0, y:0, scale:1 }}
                       exit={{ opacity:0, scale:0.9, transition:{duration:0.15} }}
                       transition={MORPH}>
+                      <CardInner p={PRODUCTS[key]} />
+                    </motion.div>
+                  );
+                }
+                /* Lab · Glide — a product that is in both collections glides
+                   from its old slot to its new one (shared layoutId, V1's
+                   spring); everything else unfurls in V1-style, staggered by
+                   row. Matched cards never fade: they are the same object. */
+                if (style==='glide') {
+                  const first = col.items.indexOf(key)===i;
+                  const matched = first && fromMap.has(key);
+                  const rows = Math.ceil(col.items.length / COLS), row = Math.floor(i / COLS);
+                  const delay = reduce ? 0 : (dir > 0 ? row : rows - 1 - row) * 0.055;
+                  return (
+                    <motion.div key={`${col.id}-${i}`} className="mp-cell"
+                      layoutId={first ? `g-${key}` : undefined} layout={first ? true : false}
+                      initial={ matched ? false : { opacity:0, y: reduce ? 0 : (dir > 0 ? 64 : -64) } }
+                      animate={{ opacity:1, y:0, transition:{ y:{ ...SPRING, delay }, opacity:{ duration:0.22, ease:EASE_OUT, delay }, layout: SPRING } }}
+                      exit={{ opacity:0, scale: reduce ? 1 : 0.96, transition:{ duration:0.16, ease:EASE_OUT } }}
+                      transition={{ layout: SPRING }}>
                       <CardInner p={PRODUCTS[key]} />
                     </motion.div>
                   );
@@ -612,10 +695,15 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
               <motion.div key={col.id} className="mp-grid" custom={dir}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
-                style={style === 'slideDepth' ? { transformOrigin: `50% ${stageMid}px` }
+                style={(style === 'slideDepth' || style === 'push') ? { transformOrigin: `50% ${stageMid}px` }
                      : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
-                {col.items.map((key,i)=> (unfurl && per.card) ? (
+                {col.items.map((key,i)=> (unfurl && per.cardFor) ? (
+                  <motion.div key={i} className="mp-cell" variants={per.cardFor(i, col.items.length)}
+                    style={{ position:'relative', zIndex: col.items.length - i }}>
+                    <CardInner p={PRODUCTS[key]} />
+                  </motion.div>
+                ) : (unfurl && per.card) ? (
                   <motion.div key={i} className="mp-cell" variants={per.card}
                     custom={{ d: dir, delay: per.delay(i, col.items.length) }}>
                     <CardInner p={PRODUCTS[key]} />

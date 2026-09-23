@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noon — Wishlist · motion lab</title>
+<style>
+  /* Proxima Nova = noon's page chrome (nav/footer). The design's weights are
+     Regular 400, Semibold 600, Bold 700. */
+  @font-face{font-family:"Proxima Nova";src:url("assets/fonts/ProximaNova-Regular.woff") format("woff");font-weight:400;font-display:swap}
+  @font-face{font-family:"Proxima Nova";src:url("assets/fonts/ProximaNova-Semibold.woff") format("woff");font-weight:600;font-display:swap}
+  @font-face{font-family:"Proxima Nova";src:url("assets/fonts/ProximaNova-Bold.woff") format("woff");font-weight:700;font-display:swap}
+  /* Noontree = noon's newer DS face, used inside the product panel + list bar. */
+  @font-face{font-family:"Noontree";src:url("assets/fonts/Noontree-Regular.woff2") format("woff2");font-weight:400;font-display:swap}
+  @font-face{font-family:"Noontree";src:url("assets/fonts/Noontree-Medium.woff2") format("woff2");font-weight:500;font-display:swap}
+  @font-face{font-family:"Noontree";src:url("assets/fonts/Noontree-SemiBold.woff2") format("woff2");font-weight:600;font-display:swap}
+  @font-face{font-family:"Noontree";src:url("assets/fonts/Noontree-Bold.woff2") format("woff2");font-weight:700;font-display:swap}
+
+  :root{
+    --noon-yellow:#feee00; --noon-blue:#3866df; --ink:#404553;
+    --ink-2:#475067; --ink-3:#697490; --grey1:#7e859b;
+    --grey3:#dadce3; --grey4:#f3f4f8; --page:#f2f3f7;
+    --chrome:"Proxima Nova",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    --noontree:"Noontree",-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:#e9eaef;font-family:var(--chrome);color:var(--ink);-webkit-font-smoothing:antialiased}
+  img{display:block}
+  .page{width:1440px;margin:0 auto;background:#fff}
+
+  /* ---------------- top nav ---------------- */
+  .nav{background:var(--noon-yellow);border-bottom:1px solid var(--grey3)}
+  .nav-main{display:flex;gap:32px;align-items:center;height:65px;padding:0 16px}
+  .logo{position:relative;width:90px;height:26.472px;flex:none}
+  .logo .mark{position:absolute;left:0;top:0;width:24.885px;height:100%}
+  .logo .word{position:absolute;left:33.15%;top:20.16%;bottom:20.17%;right:0}
+  .logo img{width:100%;height:100%}
+  .loc{display:flex;align-items:center;gap:8px;flex:none}
+  .loc .flag{width:31px;height:20px;border-radius:2px;overflow:hidden}
+  .loc .flag img{width:100%;height:100%;object-fit:cover}
+  .loc .txt{line-height:1}
+  .loc .txt small{display:block;font-size:12px;line-height:16.8px;color:var(--ink)}
+  .loc .txt b{font-size:14px;line-height:19.6px;font-weight:700;color:var(--ink)}
+  .loc .chev{width:20px;height:20px}
+  .search{flex:1;min-width:0;display:flex;align-items:center;gap:8px;height:36px;background:#fff;border-radius:4px;padding:13px 8px 12px}
+  .search img{width:20px;height:20px}
+  .search span{font-size:14px;line-height:19.6px;color:var(--ink)}
+  .right{display:flex;align-items:center;gap:16px;flex:none}
+  .right .ar{font-size:13px;font-weight:700}
+  .sep{width:1px;height:22px;background:#d5c800}
+  .acct{line-height:1}
+  .acct small{display:block;font-size:12px;line-height:16.8px;color:var(--ink)}
+  .acct .row{display:flex;align-items:center;gap:4px;margin-top:2px}
+  .acct b{font-size:14px;line-height:19.6px;font-weight:700}
+  .acct .chev{width:20px;height:20px}
+  .badgeable{position:relative;display:flex;align-items:center;gap:4px}
+  .badgeable img{width:20px;height:20px}
+  .badgeable b{font-size:13px;line-height:18px;font-weight:700}
+  .count{position:absolute;top:-8px;left:11px;min-width:16px;height:16px;padding:0 2px;border-radius:19px;background:var(--noon-blue);border:1px solid var(--noon-yellow);color:#fff;font-size:10px;line-height:14px;font-weight:400;text-align:center;display:flex;align-items:center;justify-content:center}
+
+  .cats{position:relative;background:#fffef7;height:45px}
+  .cats .all{position:absolute;left:20px;top:12.5px;display:flex;align-items:center;gap:9px;color:var(--noon-blue);font-weight:700;font-size:14px;line-height:19.6px}
+  .cats .all img{width:16px;height:16px}
+  .cats .vsep{position:absolute;left:178px;top:0;width:1px;height:45px;background:#e2e5f1}
+  .cats a{position:absolute;top:12.5px;font-size:14px;line-height:19.6px;font-weight:700;color:var(--ink);text-decoration:none;white-space:nowrap}
+  .cats a.active::after{content:"";position:absolute;left:0;right:0;bottom:-12.5px;height:3px;background:var(--noon-yellow);border-radius:3px 3px 0 0}
+  .cats .divider{position:absolute;left:0;right:0;bottom:0;height:1px;background:var(--grey4)}
+
+  /* ---------------- middle: panel container ---------------- */
+  .middle{background:var(--page);padding:24px 120px}
+  .listbar{display:flex;align-items:center;justify-content:space-between;width:1200px;height:44px;margin:0 auto 20px}
+  .switch{position:relative;display:flex;align-items:center;width:264px;height:44px;padding:4px;border-radius:9999px;background:#eaecf0;box-shadow:inset 0 1px 4px rgba(36,36,36,.04)}
+  .switch .seg{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;border-radius:9999px;font-family:var(--noontree);font-size:14px;line-height:20px;font-weight:600;letter-spacing:-.1px;color:#666d85}
+  .switch .seg.on{background:#fff;border:1px solid #fff;color:#1d2539;box-shadow:0 1px 3px rgba(34,34,34,.06)}
+  .newpill{display:flex;align-items:center;justify-content:center;padding:2px 6px;border-radius:12px;background:linear-gradient(#19cb83,#0f8857);color:#fff;font-family:var(--noontree);font-size:11px;line-height:14px;font-weight:700;letter-spacing:-.1px}
+  .create{display:flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:14px 16px 14px 12px;background:#0f7eff;border-radius:10px;color:#fff;font-family:var(--noontree);font-size:14px;line-height:20px;font-weight:600}
+  .create img{width:20px;height:20px}
+
+  .panelwrap{width:1200px;margin:0 auto}
+  #panel{width:1200px;height:1080px}
+
+  /* ---------------- help band ---------------- */
+  .help{background:#fafbff;border-top:1px solid #c9cee1;border-bottom:1px solid #c9cee1}
+  .help-in{width:1200px;margin:0 auto;height:108px;display:flex;align-items:center;justify-content:space-between}
+  .help h3{margin:0 0 12px;font-size:24px;line-height:1;font-weight:700;color:var(--ink-2)}
+  .help p{margin:0;font-size:14px;line-height:1;color:var(--ink-3)}
+  .contacts{display:flex;gap:44px}
+  .contact{display:flex;align-items:center;gap:16px}
+  .contact .circ{position:relative;width:42px;height:42px;flex:none}
+  .contact .circ img.o{width:100%;height:100%}
+  .contact .circ img.g{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px}
+  .contact small{display:block;font-size:12px;line-height:1;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.25px;margin-bottom:5px}
+  .contact b{font-size:21px;line-height:1;font-weight:700;color:var(--ink-2)}
+
+  /* ---------------- footer ---------------- */
+  footer{background:#fff}
+  .cols{width:1200px;margin:0 auto;padding:44px 0 0;display:flex;justify-content:space-between}
+  .col h4{margin:0 0 21px;font-size:15px;line-height:1;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.3125px}
+  .col a{display:block;font-size:14px;line-height:25px;color:var(--ink-2);text-decoration:none;letter-spacing:.3365px}
+  .go{width:1200px;margin:40px auto 0;display:flex;justify-content:center;gap:249px}
+  .go section h4{margin:0 0 20px;font-size:15px;line-height:1;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.3125px;text-align:center}
+  .badges{display:flex;gap:12px}
+  .badges img{height:35px}
+  .social{display:flex;gap:12px}
+  .social img{width:40px;height:40px}
+  .legal{background:#f6f6f9;margin-top:40px}
+  .legal-in{width:1200px;margin:0 auto;height:55px;display:flex;align-items:center;gap:12px;font-size:13px;line-height:1;color:var(--ink-2)}
+  .legal-in .copy b{font-weight:700}
+  .legal-in .pay{display:flex;gap:8px;margin-left:8px}
+  .legal-in .pay .mark{width:46px;height:29px;border:1px solid #e3e5ea;border-radius:2px;display:flex;align-items:center;justify-content:center}
+  .legal-in .pay .mark img{max-width:34px;max-height:18px}
+  .legal-in .spacer{flex:1}
+  .legal-in a{color:var(--ink-2);text-decoration:none;margin-left:12px}
+</style>
+<script>
+  // panel.css is loaded with a timestamp, the same way MotionPanel.jsx is
+  // fetched. Loaded plainly, a browser could keep an old copy of the stylesheet
+  // alongside the fresh component — after a class rename that drew the blue
+  // rail marker with no styles at all, i.e. invisibly.
+  document.write('<link rel="stylesheet" href="./panel.css?t=' + Date.now() + '">');
+</script>
+<style>
+  /* Transition picker — harness chrome, verbatim from the prototype PICKER.md
+     spec. Deliberately not styled with page tokens so it never reads as part
+     of the design being judged. */
+  .proto-picker{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:2px;padding:4px;border-radius:999px;background:rgba(10,10,10,.82);-webkit-backdrop-filter:blur(12px) saturate(1.4);backdrop-filter:blur(12px) saturate(1.4);box-shadow:0 0 0 1px rgba(255,255,255,.08) inset,0 8px 24px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.12);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px;line-height:1;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none}
+  .proto-picker-highlight{position:absolute;top:4px;left:0;height:28px;border-radius:999px;background:rgba(255,255,255,.12);will-change:transform}
+  .proto-picker[data-ready] .proto-picker-highlight{transition:transform 250ms cubic-bezier(.23,1,.32,1),width 250ms cubic-bezier(.23,1,.32,1)}
+  @media (prefers-reduced-motion: reduce){.proto-picker[data-ready] .proto-picker-highlight{transition:none}}
+  .proto-picker-item{position:relative;display:flex;align-items:center;height:28px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:rgba(255,255,255,.55);font:inherit;cursor:pointer;transition:color 150ms ease-out}
+  .proto-picker-item:hover{color:rgba(255,255,255,.85)}
+  .proto-picker-item:active{transform:scale(.97)}
+  .proto-picker-item:focus-visible{outline:2px solid rgba(255,255,255,.4);outline-offset:2px}
+  .proto-picker-item[data-active]{color:#fff}
+</style>
+
+<!-- framer-motion must be v12 (v11 predates React 19: AnimatePresence exits
+     never complete, which silently wedges mode="wait"), and motion-dom/
+     motion-utils must be pinned — esm.sh otherwise resolves the `^12.x` range
+     to a newer motion-dom that no longer exports `activeAnimations`, and the
+     whole module fails to load with no visible error. -->
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@19.2.3",
+    "react/jsx-runtime": "https://esm.sh/react@19.2.3/jsx-runtime",
+    "react-dom": "https://esm.sh/react-dom@19.2.3?deps=react@19.2.3",
+    "react-dom/client": "https://esm.sh/react-dom@19.2.3/client?deps=react@19.2.3",
+    "framer-motion": "https://esm.sh/framer-motion@12.23.12?deps=react@19.2.3,react-dom@19.2.3,motion-dom@12.23.12,motion-utils@12.23.6"
+  }
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+</head>
+<body>
+<div class="page">
+
+  <!-- ============ TOP NAV ============ -->
+  <div class="nav">
+    <div class="nav-main">
+      <div class="logo">
+        <span class="mark"><img src="assets/chrome/5f00e.svg" alt=""></span>
+        <span class="word"><img src="assets/chrome/78245.svg" alt="noon"></span>
+      </div>
+      <div class="loc">
+        <span class="flag"><img src="assets/chrome/e14ec.svg" alt="UAE"></span>
+        <span class="txt"><small>Deliver to</small><b>Downtown Dubai</b></span>
+        <img class="chev" src="assets/chrome/3b465.svg" alt="">
+      </div>
+      <div class="search">
+        <img src="assets/chrome/f1372.svg" alt="">
+        <span>Iphone</span>
+      </div>
+      <div class="right">
+        <span class="ar">العربية</span>
+        <span class="sep"></span>
+        <span class="acct"><small>Hala Apple</small><span class="row"><b>My Account</b><img class="chev" src="assets/chrome/f223e.svg" alt=""></span></span>
+        <span class="sep"></span>
+        <span class="badgeable"><img src="assets/chrome/204fb.svg" alt=""><b>My lists</b><span class="count">8</span></span>
+        <span class="sep"></span>
+        <span class="badgeable"><img src="assets/chrome/59ee5.svg" alt=""><b>Cart</b><span class="count">8</span></span>
+      </div>
+    </div>
+    <div class="cats">
+      <span class="all">ALL CATEGORIES <img src="assets/chrome/6ef32.svg" alt=""></span>
+      <span class="vsep"></span>
+      <a href="#" style="left:199px">ELECTRONICS</a>
+      <a href="#" style="left:317px">MEN</a>
+      <a href="#" class="active" style="left:372px">WOMEN</a>
+      <a href="#" style="left:450px">HOME &amp; KITCHEN</a>
+      <a href="#" style="left:591px">BEAUTY &amp; FRAGRANCE</a>
+      <a href="#" style="left:770px">BABY &amp; TOYS</a>
+      <a href="#" style="left:888px">GROCERY</a>
+      <a href="#" style="left:978px">SPORTS</a>
+      <span class="divider"></span>
+    </div>
+  </div>
+
+  <!-- ============ MIDDLE: list bar + live panel ============ -->
+  <div class="middle">
+    <div class="listbar">
+      <div class="switch">
+        <span class="seg on">Wish lists</span>
+        <span class="seg">Gift lists <span class="newpill">NEW</span></span>
+      </div>
+      <div class="create"><img src="assets/chrome/plus-60e6c.svg" alt="">Create new list</div>
+    </div>
+    <div class="panelwrap"><div id="panel"></div></div>
+  </div>
+
+  <!-- ============ HELP BAND ============ -->
+  <div class="help">
+    <div class="help-in">
+      <div>
+        <h3>We're always here to help</h3>
+        <p>Mauris molestie, leo et convallis tempus, leo magna egestas lacus.</p>
+      </div>
+      <div class="contacts">
+        <div class="contact"><span class="circ"><img class="o" src="assets/chrome/7fb27.svg" alt=""><img class="g" src="assets/chrome/dc9f3.svg" alt=""></span><span><small>Help Centre</small><b>help.noon.com</b></span></div>
+        <div class="contact"><span class="circ"><img class="o" src="assets/chrome/7fb27.svg" alt=""><img class="g" src="assets/chrome/4639b.svg" alt=""></span><span><small>Email Support</small><b>care@noon.com</b></span></div>
+        <div class="contact"><span class="circ"><img class="o" src="assets/chrome/7fb27.svg" alt=""><img class="g" src="assets/chrome/e52d6.svg" alt=""></span><span><small>Phone Support</small><b>800-30000</b></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ FOOTER ============ -->
+  <footer>
+    <div class="cols">
+      <div class="col"><h4>Electronics</h4>
+        <a>Mobiles</a><a>Tablets</a><a>Laptops</a><a>Home Appliances</a><a>Camera, Photo &amp; Video</a><a>Televisions</a><a>Headphones</a><a>Video Games</a></div>
+      <div class="col"><h4>Fashion</h4>
+        <a>Women's Fashion</a><a>Men's Fashion</a><a>Girls' Fashion</a><a>Boys' Fashion</a><a>Watches</a><a>Jewellery</a><a>Women's Handbags</a><a>Men's Eyewear</a></div>
+      <div class="col"><h4>Home &amp; Kitchen</h4>
+        <a>Bedding</a><a>Bath</a><a>Home Decor</a><a>Kitchen &amp; Dining</a><a>Home Appliances</a><a>Audio &amp; Video</a><a>Furniture</a><a>Pet Supplies</a></div>
+      <div class="col"><h4>Beauty</h4>
+        <a>Fragrance</a><a>Makeup</a><a>Hair Care</a><a>Skin Care</a><a>Personal Care</a><a>Men's Grooming</a><a>Health Care</a><a>Vitamins</a></div>
+      <div class="col"><h4>Grocery</h4>
+        <a>Diapers</a><a>Beverages</a><a>Canned Food</a><a>Snack Food</a><a>Breakfast Food</a><a>Baby Food</a><a>Candy &amp; Chocolates</a></div>
+      <div class="col"><h4>Top Brands</h4>
+        <a>Apple</a><a>Samsung</a><a>Nike</a><a>Sketchers</a><a>Casio</a><a>Ray-Ban</a><a>Timberland</a><a>Puma</a></div>
+    </div>
+    <div class="go">
+      <section><h4>Shop on the go</h4><div class="badges"><img src="assets/chrome/896c9.svg" alt="Google Play"><img src="assets/chrome/a01ca.svg" alt="App Store"></div></section>
+      <section><h4>Connect with us</h4><div class="social"><img src="assets/chrome/87a7a.svg" alt="Facebook"><img src="assets/chrome/de642.svg" alt="Twitter"><img src="assets/chrome/6e56b.svg" alt="Instagram"><img src="assets/chrome/f1036.svg" alt="LinkedIn"></div></section>
+    </div>
+    <div class="legal">
+      <div class="legal-in">
+        <span class="copy"><b>© 2022 noon.</b> All Rights Reserved.</span>
+        <span class="pay">
+          <span class="mark"><img src="assets/chrome/b7da8.svg" alt="Mastercard"></span>
+          <span class="mark"><img src="assets/chrome/a840f.svg" alt="Visa"></span>
+          <span class="mark"><img src="assets/chrome/0d197.svg" alt="Amex"></span>
+          <span class="mark"><img src="assets/chrome/1cd88.svg" alt="Cash"></span>
+        </span>
+        <span class="spacer"></span>
+        <a>Careers</a><a>Open a Store</a><a>Terms of Use</a><a>Terms of Sale</a><a>Privacy Policy</a><a>Consumer Rights</a>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<nav class="proto-picker" aria-label="Transition lab">
+  <span class="proto-picker-highlight" aria-hidden="true"></span>
+  <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
+  <button class="proto-picker-item">Push</button>
+  <button class="proto-picker-item">Glide</button>
+  <button class="proto-picker-item">Deal</button>
+  <button class="proto-picker-item">Folder Flight</button>
+</nav>
+
+<script>
+  // A module script's top-level await rejects silently — the panel slot just
+  // stays empty and it reads as a layout bug. Surface it instead.
+  addEventListener('unhandledrejection', (e) => {
+    const s = document.getElementById('panel');
+    if (s && !s.firstChild) s.innerHTML = '<pre style="padding:24px;color:#b00;font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap">Panel failed to load: ' + String(e.reason) + '</pre>';
+  });
+</script>
+<script type="module">
+  import React from 'react';
+  import { createRoot } from 'react-dom/client';
+
+  const src = await (await fetch('./MotionPanel.jsx?t=' + Date.now())).text();
+  const code = Babel.transform(src, { presets: [['react', { runtime: 'automatic' }]], filename: 'MotionPanel.jsx' }).code;
+  const mod = await import(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+
+  // The panel defaults to the harness's asset path, which is two levels down.
+  mod.setAssetBase('assets/images/');
+
+  // Motion LAB: V1 (the reference everything is judged against) plus four
+  // genuinely different transitions aimed at the same bar — Push, Glide, Deal
+  // and Folder Flight. The main page (index.html) keeps V1–V4 untouched.
+  const STYLES = ['slide', 'push', 'glide', 'deal', 'flight'];
+  const root = createRoot(document.getElementById('panel'));
+  // Keyed on the style: switching re-mounts the panel so both start from the
+  // same state, per the picker contract.
+  const mount = (i) => root.render(React.createElement(mod.default,
+    { key: STYLES[i], fixedStyle: STYLES[i], fixedMode: 'wait', chrome: false }));
+
+  const picker = document.querySelector('.proto-picker');
+  const hl = picker.querySelector('.proto-picker-highlight');
+  const items = [...picker.querySelectorAll('.proto-picker-item')];
+  let cur = 0;
+  const move = () => { const el = items[cur]; hl.style.width = el.offsetWidth + 'px'; hl.style.transform = `translateX(${el.offsetLeft}px)`; };
+  function setActive(i) {
+    if (i < 0 || i >= STYLES.length) return;
+    cur = i;
+    items.forEach((el, j) => { el.toggleAttribute('data-active', j === i); j === i ? el.setAttribute('aria-current', 'true') : el.removeAttribute('aria-current'); });
+    move();
+    const url = new URL(location); url.searchParams.set('v', i + 1); history.replaceState(null, '', url);
+    mount(i);
+  }
+  items.forEach((el, i) => el.addEventListener('click', () => setActive(i)));
+  addEventListener('resize', move);
+  document.addEventListener('keydown', (e) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= STYLES.length) setActive(n - 1);
+    else if (e.key === 'ArrowRight') setActive((cur + 1) % STYLES.length);
+    else if (e.key === 'ArrowLeft') setActive((cur - 1 + STYLES.length) % STYLES.length);
+  });
+  setActive((parseInt(new URLSearchParams(location.search).get('v'), 10) || 1) - 1);
+  requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
+  window.__ready = true;
+</script>
+</body>
+</html>
