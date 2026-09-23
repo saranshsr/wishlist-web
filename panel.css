@@ -182,11 +182,3 @@
 .mp-btnP img{width:16px;height:16px;display:block}
 .mp-btnI{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;box-shadow:inset 0 0 0 1px var(--surf3)}
 .mp-btnI img{width:20px;height:20px;display:block}
-
-/* V3 · Reveal — feathered wipe. A soft 22% band travels across the card as
-   --rv animates 0% -> 122% (see revealCardV). Once the reveal finishes --rv is
-   dropped, the gradient becomes invalid at computed-value time, and mask-image
-   falls back to none — so a revealed card carries no mask at rest. */
-.mp-cell[data-reveal]{
-  -webkit-mask-image:linear-gradient(var(--rdir, to top), #000 0%, #000 calc(var(--rv) - 22%), transparent var(--rv));
-          mask-image:linear-gradient(var(--rdir, to top), #000 0%, #000 calc(var(--rv) - 22%), transparent var(--rv))}

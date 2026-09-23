@@ -17,8 +17,8 @@ a specific version.
 | --- | --- | --- | --- |
 | V1 | **Unfurl** | Vertical travel only. The grid slides 44px along the rail's direction and each row adds 20px of its own, staggered 55ms so the leading row settles first. No scale. | Content arriving along the rail |
 | V2 | **Depth** | Depth at section level. The whole outgoing grid shrinks to 0.95 and fades as one piece; the whole incoming grid rises from 0.90 to full size, sharpening out of a slight blur. Both scale toward the middle of the panel. | The next section coming up to meet you |
-| V3 | **Reveal** | Nothing moves. Each card is uncovered in place by a soft, feathered edge travelling in the scroll direction, wiping in over the outgoing grid. | A clean, editorial wipe |
-| V4 | **Photo** | The new cards fade in where they stand while the old ones fade out; only the product photo settles inside its frame (1.07 → 1, 1.035 for cutouts). | A catalogue drawing your eye to the product |
+| V3 | **Focus Pull** | Nothing moves or scales. The old grid blurs out; the new one fades in quickly (180ms) but keeps sharpening from a 10px blur for 400ms, so you see focus resolving rather than a crossfade. | A camera pulling focus |
+| V4 | **Rail-anchored Bloom** | The new grid grows 0.97 → 1 from its left edge at the height of the folder you clicked, and the cards fade in as a diagonal wave spreading out from that point. | The collection opening out of its folder |
 
 V2, V3 and V4 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would

@@ -74,23 +74,13 @@ function FolderPreview({ items }) {
   );
 }
 
-/* V4 · Photo — the one piece of motion inside the card: the photo settles
-   from a slight zoom while the frame, gutters and text stay put. .mp-top clips
-   it, so the card itself never grows (which would read as V2). Cutouts get a
-   smaller zoom than lifestyle photos — scaling a product on white reads as the
-   product itself swelling. The text used to arrive 60ms after its photo; on a
-   filmstrip that showed as photos sitting there with no text under them, which
-   reads as half-loaded, so the text now simply arrives with its card. */
-const photoV = (fit) => ({ enter:{ scale: fit === 'contain' ? 1.035 : 1.07 },
-  center:{ scale:1, transition:{ duration:0.5, ease:[0.23, 1, 0.32, 1] } } });
-
-function CardInner({ p, settle = false }) {
-  const Img = settle ? motion.img : 'img';
+function CardInner({ p }) {
+  const Img = 'img';
   const Bottom = 'div';
   return (
     <div className="mp-card">
       <div className="mp-top">
-        <Img className="mp-photo" data-fit={p.fit} src={IMG(p.img)} alt="" {...(settle ? { variants: photoV(p.fit) } : null)} />
+        <Img className="mp-photo" data-fit={p.fit} src={IMG(p.img)} alt="" />
         <div className="mp-pager"><i className="on"/><i/><i className="sm"/><i className="xs"/></div>
         <div className="mp-kebab"><img src={IMG('73447.svg')} alt=""/></div>
       </div>
@@ -409,55 +399,48 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     exit: { opacity:0, scale: reduce ? 1 : 0.95, filter: reduce ? 'blur(0px)' : 'blur(5px)', transition:{
       scale:{ duration:0.22, ease:EASE_OUT }, opacity:{ duration:0.16, ease:EASE_OUT }, filter:{ duration:0.18, ease:EASE_OUT } } },
   };
-  /* Column-aware stagger for V3/V4. V1/V2 stagger by row, so on Home decor
-     (one row) and Sneakers (one card) their choreography never shows. Walking
-     the columns as well puts a ripple on every collection. Rows are ordered by
-     direction exactly like rowDelay. */
-  const gridDelay = (i, n, colStep, rowStep) => {
+  /* V3 · Focus Pull. Nothing travels, nothing scales: a camera refocusing.
+     The outgoing grid blurs out as a whole. The incoming one fades in QUICKLY
+     (180ms) but keeps sharpening from 10px for 400ms — the fade has to finish
+     well before the blur does, or it reads as a muddy crossfade instead of
+     focus resolving. Section-level on purpose: a per-card trickle is what made
+     the retired Reveal feel choppy. Blur lives on the grid container only;
+     blurring seven card layers separately is the expensive way. */
+  const focusV = {
+    enter: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(10px)' },
+    center: { opacity:1, filter:'blur(0px)', transition:{
+      opacity:{ duration:0.18, ease:EASE_OUT, delay: reduce ? 0 : 0.08 },
+      filter:{ duration:0.4, ease:EASE_OUT, delay: reduce ? 0 : 0.08 } } },
+    exit: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(6px)', transition:{ duration:0.14, ease:EASE_OUT } },
+  };
+
+  /* V4 · Rail-anchored Bloom. The incoming grid grows 0.97 -> 1 from the grid's
+     left edge at the HEIGHT OF THE FOLDER YOU CLICKED (bloomOrigin), and the
+     cards fade in as a diagonal wave spreading out from that point. Content
+     comes from where it belongs — the rail — without sliding sideways: the
+     scale is small and anchored, so it reads as growth, not travel. The wave is
+     tight (22ms a step) under long 0.34s fades, so the cards overlap into one
+     bloom rather than popping in one by one. Outgoing grid: a plain fade. */
+  const railBloomV = {
+    enter: { opacity:1, scale: reduce ? 1 : 0.97, filter:'blur(0px)' },
+    center: { opacity:1, scale:1, filter:'blur(0px)', transition:{
+      scale: reduce ? { duration:0 } : { type:'spring', stiffness:220, damping:30 } } },
+    exit: { opacity:0, filter:'blur(0px)', transition:{ duration:0.12, ease:EASE_OUT } },
+  };
+  const railBloomCardV = {
+    enter: { opacity:0, scale: reduce ? 1 : 0.985 },
+    center: ({ delay }) => ({ opacity:1, scale:1, transition:{
+      opacity:{ duration:0.34, ease:EASE_OUT, delay }, scale:{ duration:0.4, ease:EASE_OUT, delay } } }),
+  };
+  // Distance from the anchor in grid steps: columns out from the rail edge,
+  // rows out from the row nearest the clicked folder's height.
+  const bloomDelay = (i) => {
     if (reduce) return 0;
-    const rows = Math.ceil(n / COLS), row = Math.floor(i / COLS), col = i % COLS;
-    return col * colStep + (dir > 0 ? row : rows - 1 - row) * rowStep;
+    const row = Math.floor(i / COLS), col = i % COLS;
+    const anchorRow = Math.max(0, Math.min(1, Math.floor((active * RAIL_ROW_H + RAIL_ROW_H / 2 - GRID_TOP) / ROW_PITCH)));
+    return Math.min(0.2, (col + Math.abs(row - anchorRow)) * 0.022);
   };
-
-  /* V3 · Reveal. Each card is uncovered in place by an edge travelling in the
-     scroll direction — from the bottom when you go down the rail, from the top
-     when you go up — rippling across the columns. Nothing travels or scales.
-     clip-path is the sanctioned fourth property; `round 12px` keeps the card's
-     corners during the wipe. 340ms, not the skill recipe's 600ms: that recipe
-     is for marketing reveals, and this is a control you use. The grid itself
-     doesn't fade in — a fade would wash out the edge while it's travelling. */
-  /* The edge is FEATHERED: the cell is masked by a gradient whose soft 22%
-     band travels across it (--rv), so the new card dissolves in behind a soft
-     edge rather than a hard line. --rv runs 0% -> 122% so the band ends past
-     the card; at rest the value is dropped (transitionEnd) and the mask falls
-     away, so nothing stays composited once the reveal is done. The gradient's
-     direction comes from --rdir, set per cell at render, which is safe: it is
-     only read on the way IN. */
-  const revealGridV = {
-    enter: { opacity:1, filter:'blur(0px)' },
-    center: { opacity:1, filter:'blur(0px)' },
-    exit: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(3px)', transition:{ duration:0.16, ease:EASE_OUT } },
-  };
-  const revealCardV = {
-    enter: reduce ? { opacity:0 } : { '--rv':'0%' },
-    center: ({ delay }) => (reduce
-      ? { opacity:1, transition:{ opacity:{ duration:0.2, delay } } }
-      : { '--rv':'122%', transition:{ '--rv':{ duration:0.42, ease:EASE_OUT, delay } }, transitionEnd:{ '--rv':'none' } }),
-  };
-
-  /* V4 · Photo. Cards fade in where they stand; inside each, the photo settles
-     and then the text arrives (photoV / bottomV above). An 8px grid hint
-     carries direction. */
-  const photoGridV = {
-    enter: (d) => ({ opacity:0, y: reduce ? 0 : (d > 0 ? 8 : -8), filter:'blur(0px)' }),
-    center: { opacity:1, y:0, filter:'blur(0px)', transition:{ opacity:{ duration:0.2 }, y:{ ...SPRING } } },
-    exit: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(3px)', transition:{ duration:0.16, ease:EASE_OUT } },
-  };
-  const photoCardV = {
-    enter: { opacity:0 },
-    center: ({ delay }) => ({ opacity:1,
-      transition:{ opacity:{ duration:0.26, ease:EASE_OUT, delay }, delayChildren: delay } }),
-  };
+  const bloomOrigin = `0px ${active * RAIL_ROW_H + RAIL_ROW_H / 2 - GRID_TOP}px`;
 
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
@@ -471,8 +454,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
     slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
-    reveal:     { grid: revealGridV, card: revealCardV, delay: (i, n) => gridDelay(i, n, 0.02, 0.03), reveal: true },
-    photo:      { grid: photoGridV,  card: photoCardV,  delay: (i, n) => gridDelay(i, n, 0.02, 0.025), settle: true },
+    focus:      { grid: focusV,        card: null,           delay: () => 0 },
+    railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
   };
   const per = STAGGERED[style];
   const unfurl = !!per;
@@ -484,7 +467,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'reveal' || style === 'photo' || style === 'slideDepth') ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth') ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -629,13 +612,13 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
               <motion.div key={col.id} className="mp-grid" custom={dir}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
-                style={style === 'slideDepth' ? { transformOrigin: `50% ${stageMid}px` } : undefined}
+                style={style === 'slideDepth' ? { transformOrigin: `50% ${stageMid}px` }
+                     : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> (unfurl && per.card) ? (
                   <motion.div key={i} className="mp-cell" variants={per.card}
-                    custom={{ d: dir, delay: per.delay(i, col.items.length) }}
-                    {...(per.reveal && !reduce ? { 'data-reveal': '', style: { '--rdir': dir > 0 ? 'to top' : 'to bottom' } } : null)}>
-                    <CardInner p={PRODUCTS[key]} settle={!!per.settle} />
+                    custom={{ d: dir, delay: per.delay(i, col.items.length) }}>
+                    <CardInner p={PRODUCTS[key]} />
                   </motion.div>
                 ) : (
                   <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>
