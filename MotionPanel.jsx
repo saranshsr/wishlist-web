@@ -74,19 +74,19 @@ function FolderPreview({ items }) {
   );
 }
 
-/* V4 · Photo — motion lives INSIDE the card: the photo settles from a slight
-   zoom while the frame, gutters and text block stay put. .mp-top clips it, so
-   the card itself never grows (which would read as V2). Cutouts get a smaller
-   zoom than lifestyle photos — scaling a product on white reads as the product
-   itself swelling. Only these two children carry variants; they inherit
-   enter/center from the cell, which staggers them 60ms apart. */
-const photoV = (fit) => ({ enter:{ scale: fit === 'contain' ? 1.04 : 1.08 },
-  center:{ scale:1, transition:{ duration:0.42, ease:[0.23, 1, 0.32, 1] } } });
-const bottomV = { enter:{ opacity:0, y:4 }, center:{ opacity:1, y:0, transition:{ duration:0.24, ease:[0.23, 1, 0.32, 1] } } };
+/* V4 · Photo — the one piece of motion inside the card: the photo settles
+   from a slight zoom while the frame, gutters and text stay put. .mp-top clips
+   it, so the card itself never grows (which would read as V2). Cutouts get a
+   smaller zoom than lifestyle photos — scaling a product on white reads as the
+   product itself swelling. The text used to arrive 60ms after its photo; on a
+   filmstrip that showed as photos sitting there with no text under them, which
+   reads as half-loaded, so the text now simply arrives with its card. */
+const photoV = (fit) => ({ enter:{ scale: fit === 'contain' ? 1.035 : 1.07 },
+  center:{ scale:1, transition:{ duration:0.5, ease:[0.23, 1, 0.32, 1] } } });
 
 function CardInner({ p, settle = false }) {
   const Img = settle ? motion.img : 'img';
-  const Bottom = settle ? motion.div : 'div';
+  const Bottom = 'div';
   return (
     <div className="mp-card">
       <div className="mp-top">
@@ -94,7 +94,7 @@ function CardInner({ p, settle = false }) {
         <div className="mp-pager"><i className="on"/><i/><i className="sm"/><i className="xs"/></div>
         <div className="mp-kebab"><img src={IMG('73447.svg')} alt=""/></div>
       </div>
-      <Bottom className="mp-bottom" {...(settle ? { variants: bottomV } : null)}>
+      <Bottom className="mp-bottom">
         <div style={{display:'flex',flexDirection:'column',gap:6}}>
           <div style={{display:'flex',flexDirection:'column',gap:4}}>
             <p className="mp-name">{p.name}</p>
@@ -420,17 +420,23 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      corners during the wipe. 340ms, not the skill recipe's 600ms: that recipe
      is for marketing reveals, and this is a control you use. The grid itself
      doesn't fade in — a fade would wash out the edge while it's travelling. */
-  const CLIP_FULL = 'inset(0% 0% 0% 0% round 12px)';
+  /* The edge is FEATHERED: the cell is masked by a gradient whose soft 22%
+     band travels across it (--rv), so the new card dissolves in behind a soft
+     edge rather than a hard line. --rv runs 0% -> 122% so the band ends past
+     the card; at rest the value is dropped (transitionEnd) and the mask falls
+     away, so nothing stays composited once the reveal is done. The gradient's
+     direction comes from --rdir, set per cell at render, which is safe: it is
+     only read on the way IN. */
   const revealGridV = {
     enter: { opacity:1, filter:'blur(0px)' },
     center: { opacity:1, filter:'blur(0px)' },
     exit: { opacity:0, filter: reduce ? 'blur(0px)' : 'blur(3px)', transition:{ duration:0.16, ease:EASE_OUT } },
   };
   const revealCardV = {
-    enter: ({ d }) => ({ clipPath: reduce ? CLIP_FULL : (d > 0 ? 'inset(100% 0% 0% 0% round 12px)' : 'inset(0% 0% 100% 0% round 12px)'),
-                         opacity: reduce ? 0 : 1 }),
-    center: ({ delay }) => ({ clipPath: CLIP_FULL, opacity:1,
-      transition:{ clipPath:{ duration:0.34, ease:EASE_OUT, delay }, opacity:{ duration:0.2, delay } } }),
+    enter: reduce ? { opacity:0 } : { '--rv':'0%' },
+    center: ({ delay }) => (reduce
+      ? { opacity:1, transition:{ opacity:{ duration:0.2, delay } } }
+      : { '--rv':'122%', transition:{ '--rv':{ duration:0.42, ease:EASE_OUT, delay } }, transitionEnd:{ '--rv':'none' } }),
   };
 
   /* V4 · Photo. Cards fade in where they stand; inside each, the photo settles
@@ -444,7 +450,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const photoCardV = {
     enter: { opacity:0 },
     center: ({ delay }) => ({ opacity:1,
-      transition:{ opacity:{ duration:0.2, ease:EASE_OUT, delay }, delayChildren: delay, staggerChildren: 0.06 } }),
+      transition:{ opacity:{ duration:0.26, ease:EASE_OUT, delay }, delayChildren: delay } }),
   };
 
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
@@ -459,11 +465,18 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
     slideDepth: { grid: slideDepthV, card: cardDepthV,  delay: (i, n) => rowDelay(i, n) },
-    reveal:     { grid: revealGridV, card: revealCardV, delay: (i, n) => gridDelay(i, n, 0.04, 0.03) },
-    photo:      { grid: photoGridV,  card: photoCardV,  delay: (i, n) => gridDelay(i, n, 0.035, 0.02), settle: true },
+    reveal:     { grid: revealGridV, card: revealCardV, delay: (i, n) => gridDelay(i, n, 0.02, 0.03), reveal: true },
+    photo:      { grid: photoGridV,  card: photoCardV,  delay: (i, n) => gridDelay(i, n, 0.02, 0.025), settle: true },
   };
   const per = STAGGERED[style];
   const unfurl = !!per;
+  /* V3/V4 overlap the outgoing and incoming grids instead of running them in
+     sequence. Under mode="wait" the filmstrip showed ~120ms of completely empty
+     stage between them. Neither version travels, so an overlap reads as a
+     cross-dissolve rather than two grids colliding — and in V3 the new cards
+     wipe in over the old ones, which is what a wipe should be. V1/V2 keep
+     "wait": their travel needs the old grid gone first. */
+  const gridMode = (style === 'reveal' || style === 'photo') ? 'popLayout' : mode;
 
   /* ---- rail selection ----
      `pos` is the fractional collection index the white selection row sits at.
@@ -532,7 +545,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             {/* Same mode as the grid. Hardcoding "wait" here meant that under
                 popLayout the cards were fully in before the heading had even
                 started moving — same curve, but 200ms apart. */}
-            <AnimatePresence mode={mode} initial={false} custom={dir}>
+            <AnimatePresence mode={gridMode} initial={false} custom={dir}>
               <motion.h1 key={col.id} className="mp-title" custom={dir}
                 variants={titleV} initial="enter" animate="center" exit="exit">{col.name}</motion.h1>
             </AnimatePresence>
@@ -596,14 +609,15 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           </div>
         ) : (
           <div className="mp-grid-wrap">
-            <AnimatePresence mode={mode} custom={dir} initial={false}>
+            <AnimatePresence mode={gridMode} custom={dir} initial={false}>
               <motion.div key={col.id} className="mp-grid" custom={dir}
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> unfurl ? (
                   <motion.div key={i} className="mp-cell" variants={per.card}
-                    custom={{ d: dir, delay: per.delay(i, col.items.length) }}>
+                    custom={{ d: dir, delay: per.delay(i, col.items.length) }}
+                    {...(per.reveal && !reduce ? { 'data-reveal': '', style: { '--rdir': dir > 0 ? 'to top' : 'to bottom' } } : null)}>
                     <CardInner p={PRODUCTS[key]} settle={!!per.settle} />
                   </motion.div>
                 ) : (

@@ -113,7 +113,13 @@
   .legal-in .spacer{flex:1}
   .legal-in a{color:var(--ink-2);text-decoration:none;margin-left:12px}
 </style>
-<link rel="stylesheet" href="./panel.css">
+<script>
+  // panel.css is loaded with a timestamp, the same way MotionPanel.jsx is
+  // fetched. Loaded plainly, a browser could keep an old copy of the stylesheet
+  // alongside the fresh component — after a class rename that drew the blue
+  // rail marker with no styles at all, i.e. invisibly.
+  document.write('<link rel="stylesheet" href="./panel.css?t=' + Date.now() + '">');
+</script>
 <style>
   /* Transition picker — harness chrome, verbatim from the prototype PICKER.md
      spec. Deliberately not styled with page tokens so it never reads as part
