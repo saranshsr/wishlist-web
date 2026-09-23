@@ -44,6 +44,10 @@ const COLLECTIONS = [
 const COLS=4, CARD_W=205, CARD_H=484, GAP=20, ROW_PITCH=CARD_H+GAP;
 const RAIL_ROW_H=96, THUMB_CX=48, GRID_LEFT=300, GRID_TOP=72;
 const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PITCH+CARD_H/2];
+/* Card-table styles: the grid always fits the stage, so it never scrolls and
+   nothing needs the edge fade. Their cards tilt, stack and turn past the grid's
+   edges, so the stage stops clipping for them (data-open) — no mask, no blur. */
+const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
 const SPRING = { type:'spring', stiffness:320, damping:28 };   // motion-lab slide
@@ -490,6 +494,54 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   };
   const holdV = { enter:{ opacity:1 }, center:{ opacity:1 }, exit:{ opacity:1 } };
 
+  /* Ribbon — Deal's cousin. Instead of every card coming off one pile, each
+     card slides out from under its neighbour: the top row ribbons out to the
+     right from the first slot, the second row slides down from under the row
+     above. The old cards fold back the same way, last card first. */
+  const ribbonFrom = (i) => (i === 0 ? 0 : i < COLS ? i - 1 : i - COLS);
+  const ribbonDelay = (i) => (i < COLS ? i * 0.05 : ribbonDelay(i - COLS) + 0.09);
+  const ribbonV = (i, n) => {
+    const [cx, cy] = cardCentre(i), [px, py] = cardCentre(ribbonFrom(i));
+    const last = ribbonDelay(n - 1);
+    return stackV({ i, n, tx: px - cx, ty: py - cy, s0: i === 0 ? 0.94 : 1, rot: 0,
+      inDelay: 0.08 + ribbonDelay(i), outDelay: (last - ribbonDelay(i)) * 0.35, outDur: 0.18 });
+  };
+
+  /* Flip — nothing travels. Every card turns over where it lies and the new
+     product is on the other side, in a diagonal wave from the top-left. The
+     old face turns to edge-on (accelerating, like a real flip's first half)
+     and the new face lands from edge-on on a spring, so together they read as
+     one continuous turn. rotateY, not rotateX: an exiting card can't know the
+     new direction (see stackV), and a sideways turn doesn't need one. */
+  const FLIP_P = 1400;
+  const flipV = (i) => {
+    const d = reduce ? 0 : ((i % COLS) + Math.floor(i / COLS)) * 0.045;
+    return reduce ? {
+      enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2 } }, exit:{ opacity:0, transition:{ duration:0.14 } },
+    } : {
+      enter:  { rotateY:-90, opacity:0, transformPerspective:FLIP_P },
+      center: { rotateY:0, opacity:1, transformPerspective:FLIP_P, transition:{
+        rotateY:{ type:'spring', stiffness:300, damping:30, delay: d + 0.15 },
+        opacity:{ duration:0.05, delay: d + 0.15 } } },
+      exit:   { rotateY:90, opacity:0, transformPerspective:FLIP_P, transition:{
+        rotateY:{ duration:0.15, ease:[0.32, 0, 0.67, 0], delay: d },
+        opacity:{ duration:0.04, delay: d + 0.12 } } },
+    };
+  };
+
+  /* Toss — the new cards are tossed onto the table: each drops from a little
+     above (bigger, slightly tilted) and lands with a small settle, one after
+     another. The old cards are picked up — they lift and fade together. */
+  const tossV = (i, n) => reduce ? {
+    enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2 } }, exit:{ opacity:0, transition:{ duration:0.14 } },
+  } : {
+    enter:  { y:-28, scale:1.07, rotate: tilt(i) * 0.6, opacity:0 },
+    center: { y:0, scale:1, rotate:0, opacity:1, transition:{
+      default:{ type:'spring', stiffness:380, damping:24, delay: 0.06 + i * 0.045 },
+      opacity:{ duration:0.1, ease:EASE_OUT, delay: 0.06 + i * 0.045 } } },
+    exit:   { y:-10, scale:1.03, opacity:0, transition:{ duration:0.16, ease:EASE_OUT, delay: (n - 1 - i) * 0.012 } },
+  };
+
   /* Push — V1's direction plus V2's depth  /* Push — V1's direction plus V2's depth, overlapped. The new grid rises 80px
      from below on a spring while the old one drifts up 32px, shrinks to 0.95
      and fades behind it — a new layer pushed up over the last. */
@@ -518,6 +570,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
     push:       { grid: pushV,         card: cardV,          delay: (i, n) => rowDelay(i, n) },
     deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n),           delay: () => 0 },
+    ribbon:     { grid: holdV,         cardFor: (i, n) => ribbonV(i, n),         delay: () => 0 },
+    flip:       { grid: holdV,         cardFor: (i) => flipV(i),                 delay: () => 0 },
+    toss:       { grid: holdV,         cardFor: (i, n) => tossV(i, n),           delay: () => 0 },
     flight:     { grid: holdV,         cardFor: (i, n) => flightV(i, n, active), delay: () => 0 },
   };
   const per = STAGGERED[style];
@@ -530,7 +585,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'deal') ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -634,7 +689,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             scrollable ancestor is this stage. Without it Motion measures against
             a stale scroll offset — switching into the tall collection wedged the
             exit and froze mode="wait" entirely. */}
-        <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-flight={style === 'flight' ? '' : undefined}>
+        <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
         {isSharedGrid ? (

@@ -264,10 +264,10 @@
 <nav class="proto-picker" aria-label="Transition lab">
   <span class="proto-picker-highlight" aria-hidden="true"></span>
   <button class="proto-picker-item" data-active aria-current="true">V1 · Unfurl</button>
-  <button class="proto-picker-item">Push</button>
-  <button class="proto-picker-item">Glide</button>
   <button class="proto-picker-item">Deal</button>
-  <button class="proto-picker-item">Folder Flight</button>
+  <button class="proto-picker-item">Ribbon</button>
+  <button class="proto-picker-item">Flip</button>
+  <button class="proto-picker-item">Toss</button>
 </nav>
 
 <script>
@@ -289,10 +289,10 @@
   // The panel defaults to the harness's asset path, which is two levels down.
   mod.setAssetBase('assets/images/');
 
-  // Motion LAB: V1 (the reference everything is judged against) plus four
-  // genuinely different transitions aimed at the same bar — Push, Glide, Deal
-  // and Folder Flight. The main page (index.html) keeps V1–V4 untouched.
-  const STYLES = ['slide', 'push', 'glide', 'deal', 'flight'];
+  // Motion LAB: V1 (the reference everything is judged against), Deal (the
+  // pick of round one) and three more in Deal's card-table language — Ribbon,
+  // Flip and Toss. The main page (index.html) keeps V1–V4 untouched.
+  const STYLES = ['slide', 'deal', 'ribbon', 'flip', 'toss'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.

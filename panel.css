@@ -183,9 +183,10 @@
 .mp-btnI{width:40px;height:40px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px;box-shadow:inset 0 0 0 1px var(--surf3)}
 .mp-btnI img{width:20px;height:20px;display:block}
 
-/* Lab · Folder Flight — cards fly between the grid and the rail, so the stage
-   must not clip them: no overflow clip and no edge mask for this style. The
-   grid fits the stage, so nothing needs to scroll, and scroll-to-switch still
-   works (every wheel is at an edge). The frame itself still clips the panel. */
-.mp-stage-wrap[data-flight] .mp-stage{overflow:visible;-webkit-mask-image:none;mask-image:none}
-.mp-stage-wrap[data-flight] .mp-edge{display:none}
+/* Lab · card-table styles (Deal, Ribbon, Flip, Toss) and Folder Flight —
+   cards stack, tilt and turn past the grid's edges, so the stage must not
+   clip them: no overflow clip, no edge mask, no edge blur. The grid fits the
+   stage, so nothing needs to scroll, and scroll-to-switch still works (every
+   wheel is at an edge). */
+.mp-stage-wrap[data-open] .mp-stage{overflow:visible;-webkit-mask-image:none;mask-image:none}
+.mp-stage-wrap[data-open] .mp-edge{display:none}

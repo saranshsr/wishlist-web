@@ -34,16 +34,20 @@ Common to all four:
 ## Motion lab
 
 `lab.html` (live at https://wishlist-web-ivory.vercel.app/lab.html) keeps V1 · Unfurl
-as the reference and puts four different transitions beside it. Same picker, same
-keys (`1`–`5`, `←` / `→`, `?v=`).
+as the reference next to Deal and three more transitions that treat the cards
+like cards on a table. Same picker, same keys (`1`–`5`, `←` / `→`, `?v=`).
 
 | | Transition | What moves |
 | --- | --- | --- |
 | 1 | **V1 · Unfurl** | The reference, unchanged. |
-| 2 | **Push** | The new grid pushes in along the rail's direction and carries your scroll speed; the old one sinks back (0.95) and fades underneath it. The two overlap. |
-| 3 | **Glide** | Items that are in both collections glide from their old slot to their new one without fading; everything else fades in and out around them. |
-| 4 | **Deal** | The old cards gather onto the first slot like a stack, then the new ones deal out from it, one after another. |
-| 5 | **Folder Flight** | The old cards shrink and fly back into the folder you're leaving; the new ones fly out of the folder you clicked into their slots. Outgoing and incoming overlap. |
+| 2 | **Deal** | The old cards gather onto the first slot like a stack, then the new ones deal out of it, one after another. |
+| 3 | **Ribbon** | Each new card slides out from under its neighbour: the top row ribbons out to the right, the second row slides down from under the first. The old cards fold back the same way. |
+| 4 | **Flip** | Nothing travels. Every card turns over in place, in a diagonal wave, and the new product is on the other side. |
+| 5 | **Toss** | The old cards are picked up (they lift and fade); the new ones are tossed onto the table one by one and land with a small settle. |
+
+The grid always fits the panel in these, so nothing scrolls and the edge fade
+and blur are switched off: cards are never clipped. Scrolling past an edge
+still switches folders.
 
 ## Run locally
 
