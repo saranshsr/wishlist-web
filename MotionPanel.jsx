@@ -107,6 +107,62 @@ function CardInner({ p }) {
   );
 }
 
+/* ---- V3 · Carousel as a real track ----
+   All three sections live on one vertical strip, one after another with a
+   48px gap, and the strip itself is the only thing that animates. Each
+   section's scale and opacity are pure functions of where the strip is, so a
+   switch made mid-flight simply retargets the strip from wherever it is: two
+   sections can never land on the same spot. (The previous version animated
+   each section in and out on its own; reversing mid-flight reused the exiting
+   section from its exit position and the two stacked on top of each other —
+   the "jumbled" cards.)
+   Motion is unchanged, measured off Saransh's reference: one curve,
+   cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s; a section one pitch from the
+   centre sits at 0.75 and grows linearly to 1 as it arrives; scale is anchored
+   on the section's left edge so it stays aligned to the rail. */
+const sectionH = (n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r * CARD_H + (r - 1) * GAP; };
+const TRACK_OFFS = (() => { let o = 0; return COLLECTIONS.map((c) => { const at = o; o += sectionH(c.items.length) + TRACK_GAP; return at; }); })();
+const TRACK_EASE = { duration: 0.9, ease: [0.3, 0.05, 0.05, 1] };
+
+function TrackSection({ k, c, y, on }) {
+  // Progress away from the centre, 0 (in place) … 1 (one pitch away). The
+  // pitch is the distance to the neighbour on the side the section is on.
+  const prog = (v) => {
+    const dist = TRACK_OFFS[k] + v;
+    const pitch = dist > 0 ? TRACK_OFFS[k] - TRACK_OFFS[k - 1] : sectionH(c.items.length) + TRACK_GAP;
+    return Math.min(1, Math.abs(dist) / pitch);
+  };
+  const scale = useTransform(y, (v) => 1 - (1 - TRACK_SCALE) * prog(v));
+  // Fully visible for the first 40% of the way out, then fading, so a short
+  // section never sits half-visible above or below the one in place.
+  const opacity = useTransform(y, (v) => Math.max(0, Math.min(1, 1 - (prog(v) - 0.4) / 0.6)));
+  return (
+    <motion.div className="mp-track-sec" aria-hidden={!on}
+      style={{ top: TRACK_OFFS[k], scale, opacity, pointerEvents: on ? 'auto' : 'none' }}>
+      <div className="mp-grid">
+        {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
+      </div>
+    </motion.div>
+  );
+}
+
+function CarouselTrack({ active, reduce, onSettle }) {
+  const y = useMotionValue(-TRACK_OFFS[active]);
+  React.useEffect(() => {
+    // Reduced motion: no travel, the switch is instant.
+    if (reduce) { y.set(-TRACK_OFFS[active]); onSettle(); return; }
+    // Tween from wherever the strip is right now, so an interruption is a
+    // retarget, not a restart.
+    const a = animate(y, -TRACK_OFFS[active], { ...TRACK_EASE, onComplete: onSettle });
+    return () => a.stop();
+  }, [active]);
+  return (
+    <motion.div className="mp-track" style={{ y, height: sectionH(COLLECTIONS[active].items.length) }}>
+      {COLLECTIONS.map((c, k) => <TrackSection key={c.id} k={k} c={c} y={y} on={k === active} />)}
+    </motion.div>
+  );
+}
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -126,17 +182,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const col = COLLECTIONS[active];
   // {v} handed from a scroll gesture to the entrance spring; null for a click.
   const launchRef = React.useRef(null);
-  /* V3 · Carousel track. The two sections sit one after the other on a
-     vertical track, so the distance they travel is the height of whichever
-     section is on the leading side plus the gap: going down the rail the old
-     section leaves by its own height, going up the new one arrives by its own.
-     Set before the switch renders so both enter and exit read the same D. */
-  const trackRef = React.useRef({ D: 1036 });
-  const setTrack = (from, to) => {
-    const h = (n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r * CARD_H + (r - 1) * GAP; };
-    trackRef.current = { D: h(COLLECTIONS[to > from ? from : to].items.length) + TRACK_GAP };
-  };
-  const select = (i) => { if (i===active) return; launchRef.current = null; setTrack(active, i); setDir(Math.sign(i-active)); setActive(i); };
+  const select = (i) => { if (i===active) return; launchRef.current = null; setDir(Math.sign(i-active)); setActive(i); };
 
   /* ---- scroll drives the switch ----
      The grid scrolls normally; only an *overscroll* past an edge changes
@@ -175,7 +221,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       // A pull displaces the content past the stage edge, so it clips there
       // exactly as a transition does — bring the fade in with it, scaled to how
       // far it has stretched. Without this the cards shear off mid-pull.
-      wrap?.style.setProperty('--fade-pull', Math.min(30, Math.abs(v) * 2.2).toFixed(1) + 'px');
+      wrap?.style.setProperty('--fade-pull', Math.min(12, Math.abs(v)).toFixed(1) + 'px');
     };
     const release = () => {
       if (!wrap || wrap.style.getPropertyValue('--rubber') === '0px') return;
@@ -213,7 +259,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       launchRef.current = { v: (down ? -1 : 1) * g.speed };
       release();
       g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now(); g.coast = false;
-      setTrack(activeRef.current, next);
       setDir(down ? 1 : -1);
       setActive(next);
       // Land on the edge you travelled towards, so the next overscroll in the
@@ -308,7 +353,10 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const syncFade = React.useCallback(() => {
     const el = stageRef.current, wrap = wrapRef.current;
     if (!el || !wrap) return;
-    const remaining = el.scrollHeight - el.clientHeight - el.scrollTop;
+    // The carousel keeps its other sections laid out below the one in place
+    // (hidden), which inflates scrollHeight; measure its layout box instead.
+    const track = wrap.hasAttribute('data-track') && el.querySelector('.mp-presence');
+    const remaining = (track ? track.offsetHeight : el.scrollHeight) - el.clientHeight - el.scrollTop;
     wrap.style.setProperty('--fade-top', Math.max(0, Math.min(28, el.scrollTop)) + 'px');
     wrap.style.setProperty('--fade-bot', Math.max(0, Math.min(44, remaining)) + 'px');
   }, []);
@@ -335,7 +383,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     // Cleared when the grid's own entrance reports done (onAnimationComplete
     // below); this is only the backstop for a style whose entrance never fires
     // one, and it is short so the band can't outlive the movement.
-    const t = setTimeout(() => setMoving(false), 340);
+    const t = setTimeout(() => setMoving(false), style === 'carousel' ? 950 : 340);
     return () => clearTimeout(t);
   }, [active]);
 
@@ -391,11 +439,18 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   /* The heading holds its baseline and only cross-fades. It is a single short
      word sitting on a fixed line — moving it as well as fading it read as two
      separate events, and the fade alone already carries the change. */
+  /* Title — a blur morph. The old and new names always overlap in the same
+     spot (popLayout, whatever the grid does): the outgoing one dissolves into
+     a 10px blur while the incoming one resolves out of it, so the heading reads
+     as one word morphing into the next rather than one leaving and another
+     arriving. It never moves — the heading holds its baseline. Slightly longer
+     in than out so the new name is still sharpening as the old is gone. */
   const titleV = {
-    enter:{ opacity:0, filter: reduce?'blur(0px)':'blur(3px)' },
-    center:{ opacity:1, filter:'blur(0px)', transition:{ duration:0.22, ease:EASE_OUT } },
-    exit:{ opacity:0, filter: reduce?'blur(0px)':'blur(3px)', transition:{ duration:0.18, ease:EASE_OUT } },
+    enter:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)' },
+    center:{ opacity:1, filter:'blur(0px)', transition:{ opacity:{ duration:0.3, ease:EASE_OUT }, filter:{ duration:0.42, ease:EASE_OUT } } },
+    exit:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)', transition:{ opacity:{ duration:0.26, ease:EASE_OUT }, filter:{ duration:0.3, ease:EASE_OUT } } },
   };
+
 
   /* ---- unfurl (Slide only) ----
      The grid used to travel as one rigid slab: seven cards in perfect lockstep,
@@ -656,40 +711,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       y:{ duration:0.34, ease:EASE_OUT }, scale:{ duration:0.34, ease:EASE_OUT }, opacity:{ duration:0.2, ease:EASE_OUT } } }),
   };
 
-  /* V3 · Carousel — Saransh's reference (a card carousel), turned vertical.
-     The sections are pages on one track: the outgoing section slides up by a
-     full section and shrinks as it leaves the centre, while the next one,
-     already in line just below it, slides up and grows to full size as it
-     arrives. Both ride the SAME curve so they stay locked together like one
-     strip of film. Measured off the reference frame by frame (50fps):
-       · curve — a least-squares fit of the incoming card's position gives
-         cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s (rms error 1.1%): a soft
-         ~100ms start, fastest around 200ms, then a long glide in — half-way
-         at ~215ms, 95% by ~580ms.
-       · scale — a card one pitch from the centre sits at 0.75 and grows
-         linearly with its progress to 1; the outgoing one shrinks the same
-         way, so mid-switch both are at ~0.87 with the gap opened between
-         them.
-       · opacity — none. The outgoing card simply leaves through the edge.
-         The one exception is a short (one-row) section that would start or
-         end inside the stage: it fades there, instead of popping.
-     Each section scales about its LEFT edge (vertically its own middle), so
-     while it shrinks it stays flush against the rail — anchored to the tabs,
-     the way Saransh asked — instead of drawing in from both sides. */
-  const CAROUSEL = { duration:0.9, ease:[0.3, 0.05, 0.05, 1] };
-  const inStage = () => trackRef.current.D < stageMid * 2;
-  const carouselV = {
-    enter: (d)=>({ y: reduce ? 0 : (d > 0 ? trackRef.current.D : -trackRef.current.D), scale: reduce ? 1 : TRACK_SCALE,
-      opacity: (reduce || (d > 0 && inStage())) ? 0 : 1 }),
-    center:{ y:0, scale:1, opacity:1, transition:{
-      y:CAROUSEL, scale:CAROUSEL,
-      opacity:{ duration: reduce ? 0.2 : 0.32, ease:EASE_OUT } } },
-    exit: (d)=>({ y: reduce ? 0 : (d > 0 ? -trackRef.current.D : trackRef.current.D), scale: reduce ? 1 : TRACK_SCALE,
-      opacity: (reduce || (d < 0 && inStage())) ? 0 : 1, transition:{
-      y:CAROUSEL, scale:CAROUSEL,
-      opacity: reduce ? { duration:0.14 } : { duration:0.45, ease:[0.77, 0, 0.175, 1] } } }),
-  };
-
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -702,7 +723,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
     parallax:   { grid: parallaxV,   card: cardV,       delay: (i, n) => rowDelay(i, n) },
-    carousel:   { grid: carouselV,   card: null,        delay: () => 0 },
     slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
     focus:      { grid: focusV,        card: null,           delay: () => 0 },
     railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
@@ -724,7 +744,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'carousel' || style === 'signature' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'signature' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -798,10 +818,10 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       <div className="mp-content">
         <div className="mp-header">
           <div className="mp-title-wrap">
-            {/* Same mode as the grid. Hardcoding "wait" here meant that under
-                popLayout the cards were fully in before the heading had even
-                started moving — same curve, but 200ms apart. */}
-            <AnimatePresence mode={gridMode} initial={false} custom={dir}>
+            {/* Always popLayout: the blur morph needs the old and new names
+                overlapping in one spot, in every version — under "wait" V1
+                showed an empty heading between them. */}
+            <AnimatePresence mode="popLayout" initial={false} custom={dir}>
               <motion.h1 key={col.id} className="mp-title" custom={dir}
                 variants={titleV} initial="enter" animate="center" exit="exit">{col.name}</motion.h1>
             </AnimatePresence>
@@ -829,10 +849,13 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             a stale scroll offset — switching into the tall collection wedged the
             exit and froze mode="wait" entirely. */}
         <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}
-          data-sig={style === 'signature' ? '' : undefined}>
+          data-sig={style === 'signature' ? '' : undefined}
+          data-track={style === 'carousel' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
-        {isSharedGrid ? (
+        {style === 'carousel' ? (
+          <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} />
+        ) : isSharedGrid ? (
           <div className="mp-grid">
             <AnimatePresence mode={style === 'glide' ? 'popLayout' : mode} custom={dir} initial={false}>
               {col.items.map((key,i)=>{
@@ -891,7 +914,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                 variants={per ? per.grid : style==='depth' ? depthV : dissolveV}
                 initial="enter" animate="center" exit="exit"
                 style={(style === 'slideDepth' || style === 'push' || style === 'parallax') ? { transformOrigin: `50% ${stageMid}px` }
-                     : style === 'carousel' ? { transformOrigin: '0% 50%' }
                      : style === 'railBloom' ? { transformOrigin: bloomOrigin } : undefined}
                 onAnimationComplete={(d)=>{ if (d === 'center') setMoving(false); }}>
                 {col.items.map((key,i)=> (unfurl && per.cardFor) ? (

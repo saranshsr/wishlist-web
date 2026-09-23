@@ -117,7 +117,7 @@
      moving, and gone the instant it stops. A slow release left a blur band
      hanging over settled content for the better part of a second. */
   transition:--fade-move 130ms cubic-bezier(.23,1,.32,1)}
-.mp-stage-wrap[data-moving]{--fade-move:34px;transition:--fade-move 60ms linear}
+.mp-stage-wrap[data-moving]{--fade-move:14px;transition:--fade-move 60ms linear}
 
 /* The stage is the scroll container: content scrolls normally, and only an
    overscroll past an edge switches collection. overscroll-behavior stops the
@@ -135,14 +135,17 @@
 /* Progressive blur: the band is blurred and the blur itself ramps out, so a
    card crossing the edge softens before it fades instead of shearing. Height is
    proportional to the fade, never a constant — otherwise a permanent blur strip
-   sits over the outermost cards when there is nothing to soften. */
+   sits over the outermost cards when there is nothing to soften.
+   Kept to a minimum (23 Sep, Saransh): a 14px band during a switch (was 34)
+   and a 1.5px blur (was 4–5px) — just enough that a card crossing the edge
+   doesn't shear, not enough to read as an effect. */
 .mp-edge{position:absolute;left:0;right:0;pointer-events:none;z-index:2}
-.mp-edge-t{top:0;height:calc(var(--ft) * 1.35);
-  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+.mp-edge-t{top:0;height:var(--ft);
+  -webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px);
   -webkit-mask-image:linear-gradient(to bottom,#000 0,rgba(0,0,0,.5) 55%,transparent 100%);
           mask-image:linear-gradient(to bottom,#000 0,rgba(0,0,0,.5) 55%,transparent 100%)}
-.mp-edge-b{bottom:0;height:calc(var(--fb) * 1.35);
-  -webkit-backdrop-filter:blur(5px);backdrop-filter:blur(5px);
+.mp-edge-b{bottom:0;height:var(--fb);
+  -webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px);
   -webkit-mask-image:linear-gradient(to top,#000 0,rgba(0,0,0,.5) 55%,transparent 100%);
           mask-image:linear-gradient(to top,#000 0,rgba(0,0,0,.5) 55%,transparent 100%)}
 @media (prefers-reduced-motion: reduce){ .mp-stage-wrap[data-moving]{--fade-move:0px} }
@@ -214,3 +217,11 @@
    unconstrained it wrapped "All saved items" onto two lines for its last
    frames. Titles are short, so nowrap is safe everywhere. */
 .mp-title{white-space:nowrap}
+
+/* V3 · Carousel track — every section stacked on one strip; only the strip
+   moves (see CarouselTrack). The stage clips instead of scrolling: nothing
+   in it ever needs to scroll, and the hidden sections below must not make it
+   scrollable. Sections scale from their left edge, aligned to the rail. */
+.mp-stage-wrap[data-track] .mp-stage{overflow:hidden}
+.mp-track{position:relative}
+.mp-track-sec{position:absolute;left:0;right:0;transform-origin:0% 50%}
