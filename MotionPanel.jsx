@@ -50,6 +50,7 @@ const cardCentre=(i)=>[(i%COLS)*(CARD_W+GAP)+CARD_W/2, Math.floor(i/COLS)*ROW_PI
 const OPEN_STAGE = new Set(['deal', 'ribbon', 'flip', 'toss']);
 const folderAnchor=(i)=>[THUMB_CX-GRID_LEFT, i*RAIL_ROW_H+RAIL_ROW_H/2-GRID_TOP];
 
+const TRACK_GAP = 48, TRACK_SCALE = 0.75;   // V3 · Carousel (measured)
 const SPRING = { type:'spring', stiffness:320, damping:28 };   // motion-lab slide
 const MORPH  = { type:'spring', stiffness:280, damping:30 };   // layoutId travel
 const BLOOM  = { type:'spring', stiffness:300, damping:26 };
@@ -125,7 +126,17 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const col = COLLECTIONS[active];
   // {v} handed from a scroll gesture to the entrance spring; null for a click.
   const launchRef = React.useRef(null);
-  const select = (i) => { if (i===active) return; launchRef.current = null; setDir(Math.sign(i-active)); setActive(i); };
+  /* V3 · Carousel track. The two sections sit one after the other on a
+     vertical track, so the distance they travel is the height of whichever
+     section is on the leading side plus the gap: going down the rail the old
+     section leaves by its own height, going up the new one arrives by its own.
+     Set before the switch renders so both enter and exit read the same D. */
+  const trackRef = React.useRef({ D: 1036 });
+  const setTrack = (from, to) => {
+    const h = (n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r * CARD_H + (r - 1) * GAP; };
+    trackRef.current = { D: h(COLLECTIONS[to > from ? from : to].items.length) + TRACK_GAP };
+  };
+  const select = (i) => { if (i===active) return; launchRef.current = null; setTrack(active, i); setDir(Math.sign(i-active)); setActive(i); };
 
   /* ---- scroll drives the switch ----
      The grid scrolls normally; only an *overscroll* past an edge changes
@@ -202,6 +213,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       launchRef.current = { v: (down ? -1 : 1) * g.speed };
       release();
       g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now(); g.coast = false;
+      setTrack(activeRef.current, next);
       setDir(down ? 1 : -1);
       setActive(next);
       // Land on the edge you travelled towards, so the next overscroll in the
@@ -492,49 +504,15 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   // language as the folder previews in the rail.
   const tilt = (i) => [-6, 4, -3, 7, -5, 3, -2][i % 7];
 
-  /* Deal — the old cards gather into a neat stack on the first slot, then the
-     new collection is dealt out of it card by card.
-     Apple-grade pass (23 Sep):
-       · springs with visualDuration/bounce instead of stiffness guesses, so
-         the timing is what it says: gather 0.32s critically damped (a card
-         being collected shouldn't wobble), deal 0.42s with bounce 0.08 — the
-         faint settle of a card landing on a table, not a bounce.
-       · a real pile: each card sits 2px lower than the one above it with a
-         ±2.5° turn (was ±7°, which read as scattered, not stacked), top card
-         square, all at 0.955 so the pile sits slightly back in depth.
-       · lift: a soft shadow (.mp-lift, opacity only) is on while a card is in
-         the air and fades as it lands, so travel reads as depth, not a
-         flat slide.
-       · the new pile materialises 80ms before it starts dealing, so every
-         card is seen leaving the pile rather than fading in mid-flight. */
-  const dealTilt = (i) => [0, -2.4, 1.8, -1.2, 2.6, -1.8, 1.2][i % 7];
-  const DEAL_IN  = { type:'spring', visualDuration:0.42, bounce:0.08 };
-  const DEAL_OUT = { type:'spring', visualDuration:0.32, bounce:0 };
-  const dealTiming = (i, n) => ({ inDelay: 0.12 + i * 0.026, outDelay: (n - 1 - i) * 0.014 });
+  /* Deal — the old cards gather into one tilted stack in the first slot, then
+     the new collection is dealt out of it card by card. Stays inside the grid.
+     (23 Sep: an "Apple pass" — springs, a neater pile, a lift shadow, earlier
+     dealing — was reverted: the new cards crossed the old ones still flying in
+     and the shadow bled over neighbouring cards. This is the approved Deal.) */
   const dealV = (i, n) => {
     const [cx, cy] = cardCentre(i), [px, py] = cardCentre(0);
-    const { inDelay, outDelay } = dealTiming(i, n);
-    if (reduce) return {
-      enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2 } }, exit:{ opacity:0, transition:{ duration:0.14 } },
-    };
-    const pile = { x: px - cx, y: py - cy + Math.min(i, 4) * 2, scale: 0.955, rotate: dealTilt(i) };
-    return {
-      enter:  { ...pile, opacity:0 },
-      center: { x:0, y:0, scale:1, rotate:0, opacity:1, transition:{
-        default:{ ...DEAL_IN, delay: inDelay },
-        opacity:{ duration:0.14, ease:EASE_OUT, delay: inDelay - 0.08 } } },
-      exit:   { ...pile, opacity:0, transition:{
-        default:{ ...DEAL_OUT, delay: outDelay },
-        opacity:{ duration:0.14, ease:EASE_OUT, delay: outDelay + 0.26 } } },
-    };
-  };
-  const dealLiftV = (i, n) => {
-    const { inDelay, outDelay } = dealTiming(i, n);
-    return {
-      enter:  { opacity: reduce ? 0 : 1 },
-      center: { opacity:0, transition:{ duration:0.4, ease:EASE_OUT, delay: inDelay + 0.14 } },
-      exit:   { opacity: reduce ? 0 : 1, transition:{ duration:0.16, ease:EASE_OUT, delay: outDelay } },
-    };
+    return stackV({ i, n, tx: px - cx, ty: py - cy, s0: 0.92, rot: i === 0 ? 0 : tilt(i),
+      inDelay: 0.1 + i * 0.026, outDelay: (n - 1 - i) * 0.012, outDur: 0.2 });
   };
 
   /* Folder Flight — the old cards fly back into THEIR folder in the rail and
@@ -617,6 +595,47 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       transition:{ y:{ duration:0.32, ease:EASE_OUT }, scale:{ duration:0.32, ease:EASE_OUT }, opacity:{ duration:0.26, ease:EASE_OUT }, filter:{ duration:0.26 } } }),
   };
 
+  /* ---- V4 SIGNATURE START ---- */
+  /* Converge — iOS's home-screen return / Mission Control exit, on a grid.
+     The new collection arrives from just in front of the glass: every card
+     starts pushed out radially from the middle of the panel and a touch large,
+     then converges onto its slot on one critically damped spring, inner cards
+     a beat before outer ones. Positions spread further than the cards grow
+     (SIG_SY 13% vs SIG_SIZE 5%) — that mismatch is the parallax: gutters close
+     as the cards land, so it reads as things arriving, not a zoom. Horizontal
+     spread is smaller only because the side runway is 20px (see the CSS).
+     Two more layers ride along: the photo settles inside its well a beat
+     behind the card (--sig-zoom), and a soft shadow under the card fades as it
+     touches down (--sig-lift). The old collection recedes the other way —
+     draws in toward the same point, shrinks and fades fast — so both layers
+     move along one depth axis, the new one landing on top.
+     Direction-free on purpose: exit is per-card and must be a plain object
+     (see stackV), and a slot's radial vector never depends on `dir`.
+     No blur on the receding grid: tried it, and a filter over the 7-card grid
+     stalled the compositor for ~100ms in the screencast. */
+  const SIG_SX = 1.045, SIG_SY = 1.13, SIG_SIZE = 1.05, SIG_ZOOM = 1.1, SIG_IN = 0.92, SIG_OUT_SIZE = 0.93;
+  const SIG_SPRING = { type:'spring', visualDuration:0.46, bounce:0 };
+  const signatureV = (i) => {
+    const [cx, cy] = cardCentre(i);
+    const vx = cx - 440, vy = cy - stageMid;          // from the panel's middle
+    const ring = Math.min(1, Math.hypot(vx, vy) / 520); // 0 centre … 1 corner
+    if (reduce) return {
+      enter:{ opacity:0 }, center:{ opacity:1, transition:{ duration:0.2, ease:EASE_OUT } }, exit:{ opacity:0, transition:{ duration:0.14 } },
+    };
+    const d = 0.025 + ring * 0.05;
+    return {
+      enter:  { x: vx * (SIG_SX - 1), y: vy * (SIG_SY - 1), scale: SIG_SIZE, opacity:0, '--sig-lift':1, '--sig-zoom':SIG_ZOOM },
+      center: { x:0, y:0, scale:1, opacity:1, '--sig-lift':0, '--sig-zoom':1, transition:{
+        default:{ ...SIG_SPRING, delay:d },
+        '--sig-zoom':{ type:'spring', visualDuration:0.56, bounce:0, delay:d },
+        opacity:{ duration:0.18, ease:EASE_OUT, delay:d },
+        '--sig-lift':{ duration:0.4, ease:[0.55, 0, 0.8, 0.4], delay:d } } },
+      exit:   { x: vx * (SIG_IN - 1), y: vy * (SIG_IN - 1), scale: SIG_OUT_SIZE, opacity:0, '--sig-lift':0, transition:{
+        default:{ duration:0.3, ease:EASE_OUT }, opacity:{ duration:0.14, ease:EASE_OUT } } },
+    };
+  };
+  /* ---- V4 SIGNATURE END ---- */
+
   /* V3 · Parallax — V1's unfurl with depth. The whole incoming section rises
      72px AND scales up from 0.93 to full size on critically damped springs
      (the scale a touch slower than the travel, so it keeps growing into place
@@ -637,6 +656,38 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       y:{ duration:0.34, ease:EASE_OUT }, scale:{ duration:0.34, ease:EASE_OUT }, opacity:{ duration:0.2, ease:EASE_OUT } } }),
   };
 
+  /* V3 · Carousel — Saransh's reference (a card carousel), turned vertical.
+     The sections are pages on one track: the outgoing section slides up by a
+     full section and shrinks as it leaves the centre, while the next one,
+     already in line just below it, slides up and grows to full size as it
+     arrives. Both ride the SAME curve so they stay locked together like one
+     strip of film. Measured off the reference frame by frame (50fps):
+       · curve — a least-squares fit of the incoming card's position gives
+         cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s (rms error 1.1%): a soft
+         ~100ms start, fastest around 200ms, then a long glide in — half-way
+         at ~215ms, 95% by ~580ms.
+       · scale — a card one pitch from the centre sits at 0.75 and grows
+         linearly with its progress to 1; the outgoing one shrinks the same
+         way, so mid-switch both are at ~0.87 with the gap opened between
+         them.
+       · opacity — none. The outgoing card simply leaves through the edge.
+         The one exception is a short (one-row) section that would start or
+         end inside the stage: it fades there, instead of popping.
+     Each section scales about its own centre, as the cards do. */
+  const CAROUSEL = { duration:0.9, ease:[0.3, 0.05, 0.05, 1] };
+  const inStage = () => trackRef.current.D < stageMid * 2;
+  const carouselV = {
+    enter: (d)=>({ y: reduce ? 0 : (d > 0 ? trackRef.current.D : -trackRef.current.D), scale: reduce ? 1 : TRACK_SCALE,
+      opacity: (reduce || (d > 0 && inStage())) ? 0 : 1 }),
+    center:{ y:0, scale:1, opacity:1, transition:{
+      y:CAROUSEL, scale:CAROUSEL,
+      opacity:{ duration: reduce ? 0.2 : 0.32, ease:EASE_OUT } } },
+    exit: (d)=>({ y: reduce ? 0 : (d > 0 ? -trackRef.current.D : trackRef.current.D), scale: reduce ? 1 : TRACK_SCALE,
+      opacity: (reduce || (d < 0 && inStage())) ? 0 : 1, transition:{
+      y:CAROUSEL, scale:CAROUSEL,
+      opacity: reduce ? { duration:0.14 } : { duration:0.45, ease:[0.77, 0, 0.175, 1] } } }),
+  };
+
   const ROW_STAGGER = style === 'slideDepth' ? 0.045 : 0.055;
   const rowDelay = (i, n) => {
     if (reduce) return 0;
@@ -649,14 +700,16 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const STAGGERED = {
     slide:      { grid: slideV,      card: cardV,       delay: (i, n) => rowDelay(i, n) },
     parallax:   { grid: parallaxV,   card: cardV,       delay: (i, n) => rowDelay(i, n) },
+    carousel:   { grid: carouselV,   card: null,        delay: () => 0 },
     slideDepth: { grid: depthSectionV, card: null,      delay: () => 0 },
     focus:      { grid: focusV,        card: null,           delay: () => 0 },
     railBloom:  { grid: railBloomV,    card: railBloomCardV, delay: (i) => bloomDelay(i) },
     push:       { grid: pushV,         card: cardV,          delay: (i, n) => rowDelay(i, n) },
-    deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n), liftFor: (i, n) => dealLiftV(i, n), delay: () => 0 },
+    deal:       { grid: holdV,         cardFor: (i, n) => dealV(i, n),           delay: () => 0 },
     ribbon:     { grid: holdV,         cardFor: (i, n) => ribbonV(i, n),         delay: () => 0 },
     flip:       { grid: holdV,         cardFor: (i) => flipV(i),                 delay: () => 0 },
     toss:       { grid: holdV,         cardFor: (i, n) => tossV(i, n),           delay: () => 0 },
+    signature:  { grid: holdV,         cardFor: (i) => signatureV(i),            delay: () => 0 },  // V4 · Converge
     flight:     { grid: holdV,         cardFor: (i, n) => flightV(i, n, active), delay: () => 0 },
   };
   const per = STAGGERED[style];
@@ -669,7 +722,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      "wait": their travel needs the old grid gone first. */
   // V2 overlaps too now: the incoming section rising while the outgoing one
   // sinks is the whole effect, and a blank frame between them would break it.
-  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
+  const gridMode = (style === 'focus' || style === 'railBloom' || style === 'slideDepth' || style === 'push' || style === 'glide' || style === 'flight' || style === 'parallax' || style === 'carousel' || style === 'signature' || OPEN_STAGE.has(style)) ? 'popLayout' : mode;
   /* Transform-origin for V2: the vertical middle of the stage, measured, so
      every collection recedes toward the same point in the panel. */
   const [stageMid, setStageMid] = useState(494);
@@ -773,7 +826,8 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
             scrollable ancestor is this stage. Without it Motion measures against
             a stale scroll offset — switching into the tall collection wedged the
             exit and froze mode="wait" entirely. */}
-        <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}>
+        <div className="mp-stage-wrap" ref={wrapRef} data-moving={moving ? '' : undefined} data-open={(style === 'flight' || OPEN_STAGE.has(style)) ? '' : undefined}
+          data-sig={style === 'signature' ? '' : undefined}>
         <motion.div className="mp-stage" layoutScroll ref={stageRef}>
         <div key={`${style}-${mode}`} className="mp-presence">
         {isSharedGrid ? (
@@ -840,7 +894,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
                 {col.items.map((key,i)=> (unfurl && per.cardFor) ? (
                   <motion.div key={i} className="mp-cell" variants={per.cardFor(i, col.items.length)}
                     style={{ position:'relative', zIndex: col.items.length - i }}>
-                    {per.liftFor && <motion.div className="mp-lift" aria-hidden="true" variants={per.liftFor(i, col.items.length)} />}
                     <CardInner p={PRODUCTS[key]} />
                   </motion.div>
                 ) : (unfurl && per.card) ? (

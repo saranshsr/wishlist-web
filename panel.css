@@ -190,7 +190,27 @@
    wheel is at an edge). */
 .mp-stage-wrap[data-open] .mp-stage{overflow:visible;-webkit-mask-image:none;mask-image:none}
 .mp-stage-wrap[data-open] .mp-edge{display:none}
-/* Deal · lift shadow — on while a card is in the air, faded (opacity only) as
-   it lands. Sits behind the card inside the cell's own stacking context. */
-.mp-lift{position:absolute;inset:0;border-radius:12px;pointer-events:none;z-index:-1;
-  box-shadow:0 18px 36px -12px rgba(15,23,42,.28),0 4px 10px -4px rgba(15,23,42,.12)}
+
+/* ---- V4 SIGNATURE CSS ---- */
+/* Converge. Cards land from slightly outside their slots, so the stage lends
+   them the content column's 20px side padding as runway (the scroller is
+   widened into it, the grid padded back to where it was) — otherwise the outer
+   columns are sheared flat by the scroller's own edge. Top and bottom keep the
+   usual moving edge fade, exactly like V1's travel.
+   The landing shadow sits under each card and is driven by --sig-lift (1 in
+   the air, 0 on the table): a card casts it while it is in front of the glass
+   and loses it as it touches down. */
+.mp-stage-wrap[data-sig]{margin:0 -20px}
+.mp-stage-wrap[data-sig] .mp-presence{padding:0 20px}
+.mp-stage-wrap[data-sig] .mp-cell{position:relative}
+.mp-stage-wrap[data-sig] .mp-cell::after{content:"";position:absolute;inset:0;border-radius:12px;pointer-events:none;z-index:-1;
+  box-shadow:0 24px 48px -16px rgba(16,22,40,.28),0 6px 14px -6px rgba(16,22,40,.12);opacity:var(--sig-lift,0)}
+/* The photo settles inside its well a beat behind the card (--sig-zoom), the
+   way App Store and Photos let an image breathe inside its frame. */
+.mp-stage-wrap[data-sig] .mp-photo{transform:scale(var(--sig-zoom,1))}
+/* ---- V4 SIGNATURE CSS ---- */
+
+/* Every overlapping (popLayout) style pulls the outgoing title out of flow;
+   unconstrained it wrapped "All saved items" onto two lines for its last
+   frames. Titles are short, so nowrap is safe everywhere. */
+.mp-title{white-space:nowrap}

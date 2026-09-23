@@ -16,9 +16,9 @@ a specific version.
 | | Version | What moves | Feel |
 | --- | --- | --- | --- |
 | V1 | **Unfurl** | Vertical travel only. The grid slides 44px along the rail's direction and each row adds 20px of its own, staggered 55ms so the leading row settles first. No scale. | Content arriving along the rail |
-| V2 | **Deal** | The old cards gather into a neat stack on the first slot (critically damped, 0.32s), then the new ones are dealt out of it one by one (0.42s spring, faint settle). Cards cast a soft shadow while in the air. | Cards handled on a table |
-| V3 | **Parallax** | V1's unfurl plus depth. The incoming section rises 72px and scales up from 0.93 to full size while its rows unfurl; the outgoing section recedes at half the speed, shrinking to 0.94 and fading. | The next section coming up to meet you |
-| V4 | **Rail-anchored Bloom** | The new grid grows 0.97 → 1 from its left edge at the height of the folder you clicked, and the cards fade in as a diagonal wave spreading out from that point. | The collection opening out of its folder |
+| V2 | **Deal** | The old cards gather into a tilted stack on the first slot, then the new ones are dealt out of it one by one. | Cards handled on a table |
+| V3 | **Carousel** | A vertical carousel, timed off the reference video frame by frame. The sections sit one after another on a track: the outgoing one slides up and shrinks to 0.75 as it leaves; the next, right behind it, slides up and grows to full size as it arrives, both on one curve — cubic-bezier(0.3, 0.05, 0.05, 1) over 0.9s. | Paging through a stack of sections |
+| V4 | **Converge** | Each card lands on its slot from just in front of the screen — slightly spread out and a touch large — centre cards first; the photo settles inside the card a beat later and a soft shadow fades as it touches down. The old collection draws in and fades behind. | iOS returning to the Home Screen |
 
 V2, V3 and V4 overlap the outgoing and incoming grids, so there's no empty
 frame between them. V1 runs in sequence, because its cards travel and would
