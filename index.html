@@ -288,21 +288,12 @@
 
 </div>
 
-<nav class="proto-picker" aria-label="Transition">
+<nav class="proto-picker" aria-label="Transition" hidden>
   <span class="proto-picker-highlight" aria-hidden="true"></span>
-  <button class="proto-picker-item" data-active aria-current="true">V1 · Cascade</button>
-  <button class="proto-picker-item">V2 · Deal</button>
-  <button class="proto-picker-item">V3 · Carousel</button>
-  <button class="proto-picker-item">V4 · Liquid</button>
-  <button class="proto-picker-item">V5 · Depth</button>
+  <button class="proto-picker-item" data-active aria-current="true">V3 · Carousel</button>
 </nav>
 
-<div class="proto-edge" role="radiogroup" aria-label="Edge blur and fade">
-  <span class="proto-edge-label">Edge blur &amp; fade</span>
-  <button class="proto-picker-item" role="radio" data-edge="on" data-active aria-checked="true">On</button>
-  <button class="proto-picker-item" role="radio" data-edge="off" aria-checked="false">Off</button>
-  <span class="proto-edge-note">This version has no edge fade to compare</span>
-</div>
+
 
 <script>
   // A module script's top-level await rejects silently — the panel slot just
@@ -328,15 +319,16 @@
   // to the rail; V4 Liquid Tab and V5 Spring Chain treat the page
   // as one document (the tab and its page are one body / one physical chain). The wider exploration lives in lab.html and
   // saved-items-rn/prototypes/motion.
-  const STYLES = ['slide', 'deal', 'carousel', 'liquid', 'depth2'];
+  // Final: V3 · Carousel only (13 Nov). The other versions live in git history.
+  const STYLES = ['carousel'];
   const root = createRoot(document.getElementById('panel'));
   // Keyed on the style: switching re-mounts the panel so both start from the
   // same state, per the picker contract.
   const mount = (i) => root.render(React.createElement(mod.default,
     { key: STYLES[i], fixedStyle: STYLES[i], fixedMode: 'wait', chrome: false }));
 
-  const edgeBox = document.querySelector('.proto-edge');
-  const edgeBtns = [...edgeBox.querySelectorAll('[data-edge]')];
+  const edgeBox = document.createElement('div');   // edge toggle retired with the picker
+  const edgeBtns = [];
   const picker = document.querySelector('.proto-picker');
   const hl = picker.querySelector('.proto-picker-highlight');
   const items = [...picker.querySelectorAll('.proto-picker-item')];
@@ -375,11 +367,9 @@
     if (n >= 1 && n <= STYLES.length) setActive(n - 1);
     else if (e.key === 'ArrowRight') setActive((cur + 1) % STYLES.length);
     else if (e.key === 'ArrowLeft') setActive((cur - 1 + STYLES.length) % STYLES.length);
-    else if (e.key === 'e' || e.key === 'E') setEdge(document.documentElement.hasAttribute('data-edge-off'));
   });
   // Clamped, so an old ?v=4 link (V4 was retired) still opens a version.
-  setActive(Math.min(STYLES.length, Math.max(1, parseInt(new URLSearchParams(location.search).get('v'), 10) || 1)) - 1);
-  setEdge(new URLSearchParams(location.search).get('edge') !== 'off');
+  setActive(0);
   requestAnimationFrame(() => requestAnimationFrame(() => picker.setAttribute('data-ready', '')));
   window.__ready = true;
 </script>

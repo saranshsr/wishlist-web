@@ -2,7 +2,7 @@
 
 A recreation of the noon desktop wishlist page (Figma file `bGeam4dYWnlJLz0uJ91DdQ`,
 panel frame `419:535726`) with a live saved-items panel in the middle, built to
-review **five collection-switch transitions** side by side.
+ship the final collection-switch transition, **V3 · Carousel**. (The other explorations — Cascade, Deal, Liquid, Depth — remain in git history.)
 
 The page chrome (top nav, category bar, list switcher, help band, footer) is
 static. Only the panel is interactive.
