@@ -285,12 +285,12 @@ html[data-edge-off] .mp-edge{display:none}
    without touching either. Quick in, springy out — the asymmetry is what
    makes it feel pressed rather than animated. Unselected rows only: pressing
    the open tab does nothing, so it shouldn't pretend to. */
-.mp-fan{transition:scale 380ms cubic-bezier(.34,1.56,.64,1)}
-.mp-row:not([aria-selected="true"]):active .mp-fan{scale:.96;transition:scale 90ms cubic-bezier(.23,1,.32,1)}
-@media (prefers-reduced-motion: reduce){
-  .mp-fan{transition:none}
-  .mp-row:not([aria-selected="true"]):active .mp-fan{scale:none}
-}
+/* 13 Nov: no press squeeze and no hop — on click the cards were caught
+   between three motions (hover closing in 160ms, the press scale springing
+   back with overshoot, the hop) and jerked. Now one motion: the hover spread
+   eases closed on the selected tab over 450ms on the same curve as the
+   glyph and heading fades. */
+.mp-row[aria-selected="true"] .mp-fan-card{transition:transform 450ms cubic-bezier(.45,0,.25,1)}
 /* ---- END TAB DELIGHT CSS ---- */
 
 /* V6 · Origami — the sheet and its strips. Perspective from the top edge,

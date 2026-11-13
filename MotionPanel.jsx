@@ -136,6 +136,7 @@ function useTabHop(fanRef, selected, reduce, quiet) {
     // Scroll switches stay still (Saransh: hop on selection, not while
     // scrolling); quiet is true when the switch came from the wheel.
     if (quiet && quiet()) return;
+    return;   // 13 Nov: hop retired (it fought the hover close and jerked); see TAB DELIGHT CSS
     if (reduce) {
       // No movement: the new folder just brightens in.
       if (selected) fan.animate([{ opacity: 0.55 }, { opacity: 1 }], { duration: 220, easing: 'cubic-bezier(.23,1,.32,1)' });
