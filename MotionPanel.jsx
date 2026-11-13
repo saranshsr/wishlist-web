@@ -1401,6 +1401,21 @@ function DepthTrack({ active, reduce, launch, pull, onSettle }) {
 }
 /* ==== end V5 · Depth ==== */
 
+/* Rail glyph (Gifting Registry handoff, node 620:636578): every tab carries
+   a static grey glyph; the blue never travels. It fills the tab you pick and
+   drains from the one you leave, both driven by the selection spring `pos`,
+   so the fill keeps the travel's timing. It grows from the side the selection
+   comes from: arriving from above fills top-down, from below bottom-up. */
+function RailGlyph({ i, pos }) {
+  const scaleY = useTransform(pos, (v) => Math.max(0, Math.min(1, 1 - Math.abs(v - i))));
+  const transformOrigin = useTransform(pos, (v) => (v < i ? '50% 0%' : '50% 100%'));
+  return (
+    <span className="mp-glyph" aria-hidden="true">
+      <motion.span className="mp-glyph-fill" style={{ scaleY, transformOrigin }} />
+    </span>
+  );
+}
+
 export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const [active, setActive] = useState(0);
   const [dir, setDir] = useState(1);
@@ -1719,8 +1734,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
      in than out so the new name is still sharpening as the old is gone. */
   const titleV = {
     enter:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)' },
-    center:{ opacity:1, filter:'blur(0px)', transition:{ opacity:{ duration:0.3, ease:EASE_OUT }, filter:{ duration:0.42, ease:EASE_OUT } } },
-    exit:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)', transition:{ opacity:{ duration:0.26, ease:EASE_OUT }, filter:{ duration:0.3, ease:EASE_OUT } } },
+    // Slowed (13 Nov: "looks very fast"): a soft in-out fade, 0.6s in / 0.5s out.
+    center:{ opacity:1, filter:'blur(0px)', transition:{ opacity:{ duration:0.6, ease:[0.45, 0, 0.25, 1] }, filter:{ duration:0.7, ease:[0.45, 0, 0.25, 1] } } },
+    exit:{ opacity:0, filter: reduce?'blur(0px)':'blur(10px)', transition:{ opacity:{ duration:0.5, ease:[0.45, 0, 0.25, 1] }, filter:{ duration:0.55, ease:[0.45, 0, 0.25, 1] } } },
   };
   const dealTitleV = {
     enter:{ opacity:1 }, center:{ opacity:1 },
@@ -2228,11 +2244,12 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
           <img className="mp-sel-corner mp-sel-corner-top" src={IMG('37a34.svg')} alt="" />
           <img className="mp-sel-corner mp-sel-corner-bot" src={IMG('37a34.svg')} alt="" />
         </motion.span>
-        <motion.span className="mp-notch" aria-hidden style={{ transform: notchY, height: notchH }} />
+
         {COLLECTIONS.map((c,i)=>{
           const on = i===active;
           return (
             <button key={c.id} className="mp-row" role="tab" aria-selected={on} tabIndex={on?0:-1} onClick={()=>select(i)}>
+              <RailGlyph i={i} pos={pos} />
               <FolderPreview items={c.items} selected={on} quiet={() => !!launchRef.current} />
               <span className="mp-meta">
                 <span className="mp-rowName">{c.name}</span>
