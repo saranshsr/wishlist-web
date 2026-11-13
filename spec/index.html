@@ -1,0 +1,1631 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Full Flow Spec</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=Geist+Mono:wght@400..600&display=swap" rel="stylesheet" />
+<style>
+/* Animation spec sheet for a prototype's whole interaction flow (scenes come from window.SPEC).
+   Same layout as a ProtoPie recording view: canvas (flow → layers tree · live preview · inspector · playback)
+   over a timeline of property tracks — light bar = delay, dark bar = duration.
+   The preview is the real prototype in an iframe; this page only drives it (it never edits it).
+
+   Styled with Lightweight UI v0.2.0 (lightweight-ui-kit.vercel.app), the internal-tools kit:
+   Geist / Geist Mono, ink on paper with ink washes for every hover and fill, colour only for
+   meaning, corners that grow with the object (smoothed with corner-shape), soft shadows only on
+   things that float, one ease-out curve. Light theme only. */
+:root {
+  /* ── kit colour ── */
+  --bg: #ffffff;
+  --card: #ffffff;
+  --ink: #18191d;
+  --on-ink: #ffffff;
+  --muted: #666879;
+  --line: #ededec;
+  --line-strong: #e3e3e0;
+  --line-control: #949494;
+  --wash-1: color-mix(in oklab, var(--ink) 1.5%, transparent);
+  --wash-2: color-mix(in oklab, var(--ink) 3%, transparent);
+  --wash-3: color-mix(in oklab, var(--ink) 4%, transparent);
+  --wash-4: color-mix(in oklab, var(--ink) 6%, transparent);
+  --wash-5: color-mix(in oklab, var(--ink) 8%, transparent);
+  --wash-6: color-mix(in oklab, var(--ink) 12%, transparent);
+  --ink-hover: color-mix(in oklab, var(--ink) 88%, var(--bg));
+  --draft: #96660b; --draft-bg: #fbf3e3;
+  --accent: #ec642b;   /* the internal-tools orange — playhead, its trail, the record dot */
+  --chart-1: #277fff;
+  --fn: #7c5cff;     /* easing function names, as ProtoPie colours them */
+  --live: #e5484d;   /* the value at the playhead */
+
+  /* ── spec-sheet roles, mapped onto the kit ── */
+  --canvas: color-mix(in oklab, #18191d 3%, #ffffff);
+  --dot: color-mix(in oklab, var(--ink) 9%, transparent);
+  --ink-2: var(--muted); --ink-3: var(--muted);          /* the kit has one secondary text colour */
+  --row: var(--wash-2); --row-hover: var(--wash-4);
+  --delay: var(--wash-6); --dur: var(--ink); --dur-ink: var(--on-ink);
+  --head: var(--accent);
+
+  /* ── kit radius (named by object) ── */
+  --r-xs: 6px; --r-lg: 8px; --r-chip: 10px; --r-xl: 12px; --r-control: 14px; --r-2xl: 16px; --r-tile: 20px; --r-panel: 22px;
+  --r-full: 999px;
+
+  /* ── kit shadow ── */
+  --sh-card: 0 1px 2px rgb(0 0 0 / .04);   /* floating cards: the hairline does the edge, the shadow only a whisper of lift */
+  --sh-toast: 0 12px 32px -12px rgb(0 0 0 / .32);
+  --sh-pill: 0 1px 2px rgb(0 0 0 / .06), 0 1px 1px rgb(0 0 0 / .04);
+  --sh-device: 0 0 0 1px rgb(0 0 0 / .06), 0 1px 2px rgb(0 0 0 / .03), 0 24px 60px -24px rgb(0 0 0 / .35);
+
+  /* ── kit motion ── */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --d-press: 160ms; --d-swap: 180ms; --d-popover: 150ms;
+
+  /* ── kit type (named by job) ── */
+  --sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --t-micro: 11px; --t-caption: 12px; --t-label: 13px; --t-ui: 14px; --t-body: 15px; --t-title: 17px;
+
+  /* ── layout ── */
+  --gut: 28px; --card-w: 360px;
+  --stage-pad: 52px;   /* extra room above and below the phone, so it sits smaller and calmer on the stage */
+  --lab: 320px; --rowh: 24px; --rowgap: 14px;
+  --tl-pt: 20px; --tl-pr: 32px; --tl-pb: 28px;
+
+  color-scheme: light;
+}
+
+/* The kit's corners are drawn with superellipse(4). Safari and Firefox can't, and would draw the
+   full radius as a circle, so there they shrink to the plain-rounding equivalent (×0.15). */
+* { box-sizing: border-box; corner-shape: superellipse(4); }
+@supports not (corner-shape: round) {
+  :root { --r-xs: .9px; --r-lg: 1.2px; --r-chip: 1.5px; --r-xl: 1.8px; --r-control: 2.1px; --r-2xl: 2.4px; --r-tile: 3px; --r-panel: 3.3px; --r-full: 2.4px; }
+}
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: var(--t-label); line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+svg { flex: none; }
+.num, .len, .tick, .bar, .ctrl__state, .insp dd { font-variant-numeric: tabular-nums; }
+
+/* Press feedback, as the kit's u-press: pressables shrink to 97% while held. */
+.top__back, .copy, .iters button, .ctrl button, .insp__go, .flow li button, .anims button {
+  transition: transform var(--d-press) var(--ease-out), background-color var(--d-press) var(--ease-out), color var(--d-press) var(--ease-out), box-shadow var(--d-press) var(--ease-out);
+}
+.top__back:active, .copy:active, .iters button:active, .ctrl button:active, .insp__go:active { transform: scale(.97); }
+/* wide rows dim instead: 3% of a full-width row moves its edges too far */
+.flow li button:active, .anims button:active { opacity: .7; }
+
+/* ── section head: 11px semibold caps, the kit's sidebar label ── */
+.eyebrow, .grp b, .insp__eyebrow { margin: 0; font-size: var(--t-micro); font-weight: 600; letter-spacing: .08em; line-height: 1.5; text-transform: uppercase; color: var(--muted); }
+/* a count chip clubbed to its section head (as in the A/B library's "Customer 16"): a wash, muted semibold figures */
+.count { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: var(--r-xs); background: var(--wash-4); font-family: var(--sans); font-size: var(--t-micro); font-weight: 600; line-height: 1; color: var(--muted); letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+
+/* ── top bar ── */
+.top { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 var(--gut) 0 18px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.top__back { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--r-chip); text-decoration: none; flex: none; color: var(--ink); }
+.top__back svg { width: 18px; height: 18px; }
+.top__title { font-size: var(--t-body); font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.top__sp { flex: 1; }
+
+/* Primary button, md: ink fill, 14px medium, 14px corner. The one primary action on the page. */
+.copy, .insp__go { height: 36px; padding: 0 14px; border-radius: var(--r-control); background: var(--ink); color: var(--on-ink); font-size: var(--t-ui); font-weight: 500; flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.copy { min-width: 88px; padding: 0 10px; justify-content: center; }   /* snug: 10px sides, wide enough for "✓ Copied" (68px) so the swap never resizes it */
+.copy svg { width: 15px; height: 15px; }
+/* Iteration picker — the kit's segmented control, beside Copy link: a wash track, the chosen iteration a white
+   pill with the kit's pill shadow, Geist Mono figures. Built from SPEC.paths; hidden when there is only one.
+   Picking one re-records the open scene for that iteration in place (no reload) and updates ?v= — the
+   prototype's own switcher still decides where a visit starts. Each figure's tooltip is SPEC.iterations[n]. */
+.iters[hidden] { display: none; }
+.iters { height: 36px; display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: var(--r-control); background: var(--wash-3); flex: none; }
+.iters__lab { padding: 0 8px 0 9px; font-size: var(--t-caption); font-weight: 500; color: var(--muted); white-space: nowrap; }
+.iters button { min-width: 34px; height: 30px; padding: 0 8px; border-radius: var(--r-xl); font-family: var(--mono); font-size: var(--t-caption); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--muted); background: transparent; }
+.iters button[aria-pressed="true"] { background: var(--card); color: var(--ink); box-shadow: var(--sh-pill); }
+
+/* ── canvas: the kit playground's dotted stage ── */
+.canvas { position: relative; height: clamp(600px, 66vh, 760px); overflow: hidden;
+  background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1px, transparent 1px); background-size: 16px 16px; background-position: 8px 8px; }
+/* Cards float over the stage: card surface, hairline edge, the kit's soft card shadow. */
+.card { position: absolute; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-tile); box-shadow: var(--sh-card); }
+
+/* left column: Layers and Flow are one accordion — opening one collapses the other to its header */
+.side { position: absolute; left: var(--gut); top: var(--gut); bottom: calc(var(--gut) + 46px + 16px); width: var(--card-w); z-index: 4; display: flex; flex-direction: column; gap: 16px; }
+.side > .card { position: relative; }
+.flow { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }   /* hugs its scenes; shrinks and scrolls when they don't fit */
+.card__head { flex: none; height: 52px; display: flex; align-items: center; gap: 8px; padding: 0 22px; border-bottom: 1px solid var(--line); background: var(--card); }
+.card__title { margin: 0; min-width: 0; font-size: var(--t-body); font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card__title small { margin-left: 6px; font-size: inherit; font-weight: 400; color: var(--muted); }
+.card__title small::before { content: '· '; }
+.card__head .tag { margin: 0; flex: none; }
+.flow ol { list-style: none; margin: 0; padding: 10px; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+/* still scrolls (wheel, trackpad, touch, keyboard), just without a visible bar */
+.flow ol { scrollbar-width: none; }
+.flow ol::-webkit-scrollbar { display: none; }
+/* parent: a scene */
+.flow ol > li > button { width: 100%; text-align: left; display: grid; grid-template-columns: 24px 1fr auto; gap: 2px 12px; align-items: center; padding: 10px 12px; border-radius: var(--r-chip); }
+.flow ol > li > button[aria-pressed="true"] { background: var(--wash-4); }
+/* scene number: the kit's count pill — micro mono on a wash; ink for the open scene */
+.flow .n { align-self: center; width: 24px; height: 20px; display: grid; place-items: center; border-radius: var(--r-xs); background: var(--wash-4); font-family: var(--mono); font-size: var(--t-micro); font-weight: 500; color: var(--muted); }
+.flow button[aria-current="true"] .n { background: var(--ink); color: var(--on-ink); }
+.flow .nm { font-size: var(--t-ui); font-weight: 500; color: var(--ink); }
+.flow .len { font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); }
+/* children: the layers that scene animates, on a guide line from the scene number */
+.tree { position: relative; list-style: none; margin: 4px 0 8px; padding: 0 0 0 24px; display: flex; flex-direction: column; gap: 2px; }
+.tree.is-new { animation: panelIn var(--d-swap) var(--ease-out); }
+.tree::before { content: ''; position: absolute; left: 23.5px; top: 0; bottom: 16px; width: 1px; background: var(--line-strong); }
+.tree button { position: relative; width: 100%; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-radius: var(--r-chip); text-align: left; font-size: var(--t-label); color: var(--muted); }
+.tree button::before { content: ''; position: absolute; left: -0.5px; top: 50%; width: 8px; height: 1px; background: var(--line-strong); }
+.tree button[aria-pressed="true"] { background: var(--wash-4); color: var(--ink); font-weight: 500; }
+.tree button[data-cur] { color: var(--ink); font-weight: 500; }
+.tree button[data-cur] .tree__ico { color: var(--accent); }
+.tree__ico { width: 14px; height: 14px; flex: none; }
+.tree__nm { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tree__n { font-family: var(--mono); font-size: var(--t-micro); font-weight: 400; color: var(--muted); }
+@keyframes panelIn { from { opacity: 0; transform: translateY(4px); } }
+/* badge: neutral by default; amber (the kit's draft tone) when the timing varies */
+.tag { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--r-full); background: var(--wash-4); color: var(--muted); font-family: var(--sans); font-size: var(--t-micro); font-weight: 500; line-height: 1; vertical-align: 1px; margin-left: 6px; letter-spacing: 0; text-transform: none; }
+.tag--warm { background: var(--draft-bg); color: var(--draft); }
+
+
+/* ── inspector: the kit playground's Props panel ── */
+.insp { right: var(--gut); top: var(--gut); width: var(--card-w); max-height: calc(100% - var(--gut) * 2); padding: 0 22px 20px; overflow: auto; scrollbar-width: none; }   /* hugs its content, capped at the canvas */
+/* the header stays put while the panel scrolls */
+.insp > .card__head { position: sticky; top: 0; z-index: 1; margin: 0 -22px; }
+.insp::-webkit-scrollbar { display: none; }
+/* sections: Values · Timing · Easing, each under a caps head and a hairline */
+.isec { margin: 20px -22px 0; padding: 20px 22px 0; border-top: 1px solid var(--line); }   /* hairline edge to edge, like the Flow head's */
+.card__head + .isec { margin-top: 0; border-top: 0; }   /* the header's own hairline is the first divider */
+.isec__h { margin: 0 0 14px; display: flex; align-items: center; gap: 8px; font-size: var(--t-micro); font-weight: 600; letter-spacing: .08em; line-height: 1.5; text-transform: uppercase; color: var(--muted); }
+.isec__name { margin: 0 0 12px; display: flex; align-items: center; gap: 8px; font-size: var(--t-label); font-weight: 500; color: var(--ink); }
+.isec__name .tag { margin: 0; }
+/* label · value pairs, as in ProtoPie: the label muted, the value beside it in the accent */
+.insp .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin: 0; }
+.insp .kv > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.insp .kv > .wide { grid-column: 1 / -1; }
+.insp .kv dt { flex: none; font-size: var(--t-label); color: var(--muted); }
+.insp .kv dd { margin: 0; min-width: 0; font-family: var(--mono); font-size: var(--t-label); font-weight: 500; color: var(--accent); word-break: break-word; font-variant-numeric: tabular-nums; }
+.insp__plot { display: block; width: 100%; height: 104px; margin: 0 0 16px; padding: 6px 4px; border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--wash-1); color: var(--accent); }   /* the curve in the accent */
+.isec .insp__plot { margin: 0 0 14px; }
+/* code block: the kit's — Geist Mono 12.5 on the faintest wash, hairline, 14×16 padding */
+.insp__code { display: block; margin-top: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-xl); background: var(--wash-2); font-family: var(--mono); font-size: 12.5px; line-height: 1.625; color: color-mix(in oklab, var(--ink) 90%, transparent); word-break: break-all; }
+.insp__go { margin-top: 20px; }
+/* easing expression, as ProtoPie writes it: FUNCTION(Arg value) */
+.x { font-family: var(--mono); font-size: var(--t-label); font-weight: 500; color: var(--fn); }
+.x .x-n { color: var(--accent); }
+.isec__h .tag { margin: 0; text-transform: none; letter-spacing: 0; }
+/* "Current" follows the playhead — in red, as ProtoPie marks it */
+.insp .kv dd .live { color: var(--live); }
+/* the layer's "at 0.8s on the playhead" caption */
+.insp__cap { margin: 12px 0 0; font-size: var(--t-caption); color: var(--muted); }
+.anims { list-style: none; margin: -4px 0 -10px;   /* the rows' own 10px padding stands in for the panel's bottom space */ padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.anims button { width: calc(100% + 24px); margin: 0 -12px; display: grid; grid-template-columns: 16px 1fr auto; gap: 12px; align-items: center; padding: 10px 12px; border-radius: var(--r-chip); text-align: left; }
+.anims svg { width: 15px; height: 15px; }
+.anims .tree__ico { width: 14px; height: 14px; color: var(--muted); }
+.anims .n { width: 24px; height: 20px; display: grid; place-items: center; border-radius: var(--r-xs); background: var(--wash-4); font-family: var(--mono); font-size: var(--t-micro); font-weight: 500; color: var(--muted); }
+.anims button:has(.n) { grid-template-columns: 24px 1fr auto; }
+.anims__main { display: flex; flex-direction: column; min-width: 0; }
+.anims__main b { font-size: var(--t-label); font-weight: 500; }
+.anims__main span { font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.anims__t { font-family: var(--mono); font-size: var(--t-micro); line-height: 1.5; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* the phone's frame top-aligns with the floating cards (the frame is drawn ~4px outside the screen);
+   the room it gives up at the top goes to the bottom, so the phone keeps its size */
+.stage { position: absolute; left: 50%; top: calc(var(--gut) + 4px); bottom: calc(var(--stage-pad) * 2 - var(--gut) - 4px); transform: translateX(-50%); display: grid; place-items: start center; }
+/* the device is rendered content, not chrome: it keeps its own square edge and white screen */
+/* The device frame, as in the A/B library: a solid ink outline, its thickness a fraction of the
+   screen's height (÷152, ≈5.3pt on 812) so it stays in proportion when the phone is scaled to fit. */
+.phone { position: relative; width: var(--pw, 375px); height: var(--ph, 812px); transform-origin: 0 0; background: #fff; overflow: hidden;
+  outline: calc(var(--ph, 812px) / 152) solid var(--ink); box-shadow: var(--sh-device); }
+.phone iframe { position: absolute; left: 0; top: 0; width: var(--pw, 375px); height: var(--ph, 812px); border: 0; opacity: 0; pointer-events: none; }
+.phone iframe.is-front { opacity: 1; pointer-events: auto; }
+.phone__veil { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in oklab, var(--bg) 92%, transparent); font-size: var(--t-ui); font-weight: 500; color: var(--muted); text-align: center; padding: 40px; transition: opacity 200ms var(--ease-out) 150ms; }
+.phone__veil[hidden] { display: grid; opacity: 0; pointer-events: none; transition-delay: 0ms; }
+
+/* playback: a floating toolbar, control-radius, ghost buttons with one ink play button */
+.ctrl { position: absolute; left: var(--gut); bottom: var(--gut); height: 46px; display: flex; align-items: center; gap: 4px; padding: 6px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-2xl); box-shadow: var(--sh-card); z-index: 3; }
+.ctrl button { height: 32px; min-width: 32px; padding: 0 10px; display: flex; align-items: center; justify-content: center; gap: 6px; border-radius: var(--r-chip); color: var(--ink); }
+.ctrl #play { width: 32px; padding: 0; background: var(--ink); color: var(--on-ink); }
+.ctrl #play svg { width: 12px; height: 13px; margin-left: 1px; }
+.ctrl #speed svg { width: 17px; height: 14px; }
+.ctrl i { width: 1px; height: 16px; margin: 0 2px; background: var(--line-strong); }
+.ctrl__speed { font-family: var(--mono); font-size: var(--t-caption); font-weight: 500; }
+.ctrl__state { padding: 0 10px 0 4px; font-family: var(--mono); font-size: var(--t-caption); color: var(--muted); white-space: nowrap; }
+.ctrl__cur { display: inline-block; text-align: right; color: var(--ink); }
+
+/* ── timeline ── */
+.tlwrap { overflow-x: auto; border-top: 1px solid var(--line); background: var(--bg); }
+.tl { position: relative; min-width: 940px; padding: 0 var(--tl-pr) var(--tl-pb) 0; }
+.tl__ruler { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: var(--lab) 1fr; align-items: center; height: calc(40px + var(--tl-pt)); padding-top: var(--tl-pt); background: var(--bg); }   /* pinned while the rows scroll; carries the top padding so it keeps its air when pinned */   /* pinned while the rows scroll */
+.tl__start { height: 32px; margin-left: 20px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 10px; background: var(--wash-3); border-radius: var(--r-chip); font-size: var(--t-label); font-weight: 600; white-space: nowrap; overflow: hidden; min-width: 0; }
+.tl__start svg { width: 13px; height: 12px; }
+.tl__start small { font-size: var(--t-label); color: var(--ink); font-weight: 400; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tl__scale { position: relative; height: 40px; margin-left: 10px; cursor: ew-resize; touch-action: none; }
+.tl__scale::after { content: ''; position: absolute; left: 0; right: 0; top: 26px; height: 1px; background: var(--line-strong); }
+.tick { position: absolute; top: 5px; font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); transform: translateX(-50%); white-space: nowrap; }
+.tick::after { content: ''; position: absolute; left: 50%; top: 18.5px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; corner-shape: round; background: var(--ink); }
+.tick--minor { color: transparent; }
+.tick--minor::after { width: 1px; height: 4px; margin-left: 0; border-radius: 0; background: var(--line-control); top: 19.5px; }
+.tick--zero { transform: none; }
+.tick--zero::after { left: 0; margin-left: 0; }
+.tl__rows { position: relative; }
+.grp { display: grid; grid-template-columns: var(--lab) 1fr; height: 34px; align-items: end; padding-bottom: 4px; }
+.grp b { padding-left: 30px; }
+.grp span { position: relative; margin-left: 10px; padding-bottom: 1px; font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.grp span::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.row { display: grid; grid-template-columns: var(--lab) 1fr; height: calc(var(--rowh) + var(--rowgap)); align-items: center; cursor: pointer; }
+.row__lab { display: flex; align-items: center; gap: 10px; height: calc(var(--rowh) + 4px); margin-left: 20px; padding-left: 10px; border-radius: var(--r-lg); font-size: var(--t-label); white-space: nowrap; overflow: hidden; transition: background-color var(--d-press) var(--ease-out); }
+.row__lab svg { width: 15px; height: 15px; color: var(--ink); }
+.row__lab b { font-weight: 500; }
+.row__lab span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.row__lab em { font-style: normal; font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); }
+.row__trk { position: relative; height: var(--rowh); margin-left: 10px; background: var(--row); border-radius: var(--r-lg); overflow: hidden; cursor: ew-resize; touch-action: none; transition: background-color var(--d-press) var(--ease-out); }
+.row[aria-selected="true"] .row__lab { background: var(--wash-4); }
+.row[aria-selected="true"] .row__lab b { font-weight: 600; }
+.row[aria-selected="true"] .row__trk { box-shadow: inset 0 0 0 1.5px var(--ink); }
+.row.is-dim { opacity: .3; }
+.bar { position: absolute; top: 0; height: 100%; display: grid; place-items: center; overflow: hidden; font-family: var(--mono); font-size: var(--t-micro); font-weight: 500; white-space: nowrap; }
+.bar--delay { background: var(--delay); color: var(--muted); }
+.bar--dur { background: var(--dur); color: var(--dur-ink); border-radius: var(--r-xs); }
+.bar--approx { background: repeating-linear-gradient(135deg, var(--dur) 0 6px, color-mix(in oklab, var(--dur) 72%, var(--bg)) 6px 12px); }
+.bar--repeat { background: linear-gradient(90deg, var(--dur) 70%, color-mix(in oklab, var(--dur) 20%, transparent)); }
+.bar--mark { width: 2px; margin-left: -1px; background: var(--dur); border-radius: 1px; }
+.bar--scene { background: var(--ink); }
+.bar span { padding: 0 6px; }
+.after { position: absolute; top: 0; height: 100%; display: flex; align-items: center; padding-left: 8px; font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); white-space: nowrap; pointer-events: none; }
+/* playhead: the one orange on the page, used for "now" */
+.head { position: absolute; top: 2px; bottom: 0; width: 0; pointer-events: none; z-index: 2; }
+.head::before { content: ''; position: absolute; left: -0.75px; top: 10px; bottom: 0; width: 1.5px; background: var(--head); }
+.head__pin { position: sticky; top: calc(var(--tl-pt) + 2px); height: 0; }   /* the pin + grip stay on the pinned ruler; the line runs on below */
+.head__pin::before { content: ''; position: absolute; left: -3px; width: 6px; bottom: 0; height: calc(var(--tl-pt) + 8px); background: var(--bg); }   /* hides the line above the pin */
+.head__pin::after { content: ''; position: absolute; left: -7px; top: 0; width: 14px; height: 14px; background: var(--head); border-radius: 50% 50% 50% 0; corner-shape: round; transform: rotate(-45deg); box-shadow: var(--sh-pill); }
+.grip { position: absolute; left: -14px; top: -8px; width: 28px; height: 30px; pointer-events: auto; cursor: grab; border-radius: 50%; corner-shape: round; touch-action: none; }
+.head__line { position: absolute; left: -7px; width: 14px; top: 20px; bottom: 0; pointer-events: auto; cursor: ew-resize; }
+body.is-scrubbing, body.is-scrubbing * { cursor: grabbing !important; user-select: none; }
+.lane { position: absolute; z-index: 3; top: var(--tl-pt); bottom: var(--tl-pb); left: calc(var(--lab) + 10px); right: var(--tl-pr); pointer-events: none; }
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin: 0; padding: 8px var(--tl-pr) 32px calc(var(--lab) + 10px); font-size: var(--t-caption); color: var(--muted); line-height: 1.6; }
+.foot code { font-family: var(--mono); font-size: var(--t-caption); }
+.legend { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { display: inline-block; width: 18px; height: 8px; border-radius: 2px; }
+
+/* Toast, as the kit's: ink pill, 14px medium — top centre, inside the header band (its middle is empty).
+   Arrives from the edge it lives on (12px drop + fade, 200ms), leaves shorter and softer (6px up, 120ms). */
+.toast { position: fixed; left: 0; right: 0; top: calc(7px + env(safe-area-inset-top)); z-index: 80; width: fit-content; max-width: calc(100% - 32px); margin: 0 auto;
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px 10px 14px; border-radius: var(--r-control); background: var(--ink); color: var(--on-ink);
+  font-size: var(--t-ui); font-weight: 500; line-height: 1.5; box-shadow: var(--sh-toast); cursor: default;
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out); }
+.toast svg { width: 16px; height: 16px; flex: none; color: var(--on-ink); }
+.toast.is-enter { opacity: 0; transform: translateY(-12px); }
+.toast[data-closing] { opacity: 0; transform: translateY(-6px); transition-duration: 120ms; pointer-events: none; }
+
+/* Assets — header button (secondary: wash, ink text, count) and the sheet it opens: every Lottie the flow uses
+   (SPEC.assets) in the iteration being viewed — only that iteration's; the header badge counts them and follows
+   the iteration picker — each with a live preview, its name, file name, iteration and a Download button;
+   Download all packs that iteration's into one .zip.
+   Side sheet from the right on desktop (16px slide + fade, 320ms ease-out in, 160ms out), bottom sheet ≤560px. */
+.abtn { height: 36px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: none; border-radius: var(--r-control);
+  background: var(--ink); color: var(--on-ink); font-size: var(--t-ui); font-weight: 500; white-space: nowrap; }
+.abtn[hidden] { display: none; }
+.abtn svg { width: 16px; height: 16px; }
+.abtn--ghost { padding: 0 8px 0 11px; background: var(--wash-3); color: var(--ink); }
+.abtn--ghost .count { background: var(--card); box-shadow: var(--sh-pill); }
+.abtn--sm { height: 32px; padding: 0 12px 0 10px; border-radius: var(--r-xl); font-size: var(--t-label); }
+.sheet { position: fixed; inset: 0; z-index: 70; }
+.sheet[hidden] { display: none; }
+.sheet__scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .22); opacity: 0; transition: opacity 240ms var(--ease-out); }
+.sheet__panel { position: absolute; top: 12px; right: 12px; bottom: 12px; width: min(460px, calc(100% - 24px)); display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: var(--sh-toast); overflow: hidden;
+  opacity: 0; transform: translateX(16px); transition: opacity 240ms var(--ease-out), transform 320ms var(--ease-out); }
+.sheet.is-open .sheet__scrim, .sheet.is-open .sheet__panel { opacity: 1; transform: none; }
+.sheet[data-closing] .sheet__scrim, .sheet[data-closing] .sheet__panel { transition-duration: 160ms; }
+.sheet__head { gap: 8px; padding: 0 12px 0 22px; }
+.sheet__x { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--r-xl); color: var(--muted); transition: background-color var(--d-press) var(--ease-out), color var(--d-press) var(--ease-out); }
+.sheet__x svg { width: 18px; height: 18px; }
+.sheet__body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 20px 22px 8px; overscroll-behavior: contain; }
+.sheet__body .eyebrow { margin: 0 0 12px; }
+.sheet__body ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 12px; }
+.sheet__empty { margin: 0 0 22px; padding: 14px 16px; border-radius: var(--r-tile); background: var(--wash-2); font-size: var(--t-label); color: var(--muted); }
+.ast { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 10px 12px 10px 10px; border: 1px solid var(--line); border-radius: var(--r-tile); }
+.ast__pv { width: 56px; aspect-ratio: 5 / 6; border-radius: var(--r-chip); background: var(--pv-bg, var(--wash-3)); overflow: hidden; }
+.ast__lot, .ast__lot svg { display: block; width: 100%; height: 100%; }
+.ast__pv--file .ast__lot { display: grid; place-items: center; font-family: var(--mono); font-size: var(--t-micro); color: var(--muted); }
+.ast__main { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.ast__main b { max-width: 100%; font-size: var(--t-ui); font-weight: 600; letter-spacing: -0.005em; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ast__file { max-width: 100%; margin-top: 1px; font-family: var(--mono); font-size: var(--t-micro); line-height: 1.5; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ast__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.ast__tags .tag { margin: 0; white-space: nowrap; }
+.ast__dl { flex: none; }
+.sheet__foot { flex: none; display: flex; align-items: center; justify-content: flex-end; padding: 14px 16px; border-top: 1px solid var(--line); }
+.sheet__foot:has(> [hidden]:only-child) { display: none; }
+.abtn:active, .sheet__x:active { transform: scale(.97); }
+.abtn { transition: transform var(--d-press) var(--ease-out), background-color var(--d-press) var(--ease-out); }
+@media (max-width: 560px) {
+  .abtn__lab { display: none; }
+  .abtn--ghost { padding: 0 7px 0 9px; gap: 5px; }
+  .sheet__panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: min(86vh, 720px); transform: translateY(24px); }
+}
+
+/* Hover lives in one place, behind a real pointer, so it never latches on touch. */
+@media (hover: hover) and (pointer: fine) {
+  .top__back:hover, .ctrl button:not(#play):hover { background: var(--wash-3); }
+  .copy:hover, .insp__go:hover, .ctrl #play:hover { background: var(--ink-hover); }
+  .iters button:not([aria-pressed="true"]):hover { color: var(--ink); background: var(--wash-3); }
+  .abtn:not(.abtn--ghost):hover { background: var(--ink-hover); }
+  .abtn--ghost:hover { background: var(--wash-5); }
+  .sheet__x:hover { background: var(--wash-3); color: var(--ink); }
+  .flow li button[aria-pressed="false"]:hover, .anims button:hover { background: var(--wash-3); color: var(--ink); }
+  .row:hover .row__lab { background: var(--wash-3); }
+  .row:hover .row__trk { background: var(--row-hover); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 80ms !important; }
+}
+
+@media (max-width: 1240px) { :root { --card-w: 300px; } }
+/* App shell, desktop: the page is exactly one screen tall and never scrolls. The top bar and the
+   canvas hold still; only the timeline below scrolls, inside its own box (as ProtoPie's does).
+   The canvas gives the timeline at least 240px whenever the window allows. */
+@media (min-width: 961px) {
+  html, body { height: 100%; overflow: hidden; }
+  body { display: flex; flex-direction: column; }
+  .top { flex: none; }
+  .canvas { flex: none; height: clamp(440px, calc(100vh - 56px - 240px), 760px); }
+  .tlwrap { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: none; }
+  .tlwrap::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 960px) {
+  :root { --lab: 220px; --gut: 16px; --stage-pad: 16px; }
+  .canvas { height: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .card, .stage, .ctrl, .side { position: static; transform: none; width: auto; }
+  .side { flex: none; }
+  .flow { max-height: 340px; }
+  .stage { order: 2; height: 520px; }
+  .ctrl { order: 3; align-self: flex-start; }
+  .insp { order: 4; }
+  .row__lab { gap: 8px; }
+  .foot { padding-left: 16px; }
+}
+/* tablets / phones: the timeline fits its box (no 940px minimum) — the ruler picks its step for the width */
+@media (max-width: 960px) { .tl { min-width: 0; } }
+@media (max-width: 560px) {
+  .copy { display: none; } .top { gap: 8px; } .iters__lab { display: none; }
+  :root { --lab: 132px; }
+  .tl__start { margin-left: 12px; padding: 0 10px 0 8px; } .tl__start small { display: none; }
+  .row__lab { margin-left: 12px; padding-left: 6px; gap: 6px; }
+  .row__lab b { flex: none; }
+  .row__trk, .tl__scale, .grp span { margin-left: 6px; }
+  .lane { left: calc(var(--lab) + 6px); }
+  .grp b { padding-left: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .foot { padding-left: 12px; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="top__back" id="back" href="/" aria-label="Back to the prototype"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M20 12H4m0 0 6.5-6.5M4 12l6.5 6.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
+  <div class="top__title" id="title">Full Flow — Animation Spec</div>
+  <div class="top__sp"></div>
+  <nav class="iters" id="iters" aria-label="Iteration" hidden></nav>
+  <button class="abtn abtn--ghost" id="assetsBtn" type="button" aria-haspopup="dialog" aria-controls="assetSheet" aria-label="Lottie assets" hidden><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5" stroke="currentColor" stroke-width="1.6"/><path d="M7.5 15.5c1.6 0 2.4-1.2 3.2-3.5s1.6-3.5 3.3-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16.5" cy="8.5" r="1.3" fill="currentColor"/></svg><span class="abtn__lab">Assets</span><span class="count" id="assetsN"></span></button>
+  <button class="copy" id="copy">Copy link</button>
+</header>
+
+<section class="canvas" id="canvas">
+  <div class="side" id="side">
+  <nav class="card flow" aria-label="Flow scenes"><div class="card__head"><h3 class="card__title">Flow</h3><span class="count" id="flowCount"></span></div><ol id="flow"></ol></nav>
+  </div>
+  <div class="stage" id="stage">
+    <div class="phone" id="phone">
+      <div class="phone__veil" id="veil" role="status">Loading…</div>
+    </div>
+  </div>
+  <aside class="card insp" id="insp" aria-live="polite"></aside>
+  <div class="ctrl">
+    <button id="play" aria-label="Play"><svg id="playIco" width="16" height="18" viewBox="0 0 16 18"><path d="M1 1.5v15L15 9z" fill="currentColor"/></svg></button>
+    <i></i>
+    <button id="speed" class="ctrl__speed" aria-label="Playback speed"><svg width="22" height="18" viewBox="0 0 22 18" fill="none"><path d="M3 15a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m11 15 3.5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span id="speedLbl">× 1</span></button>
+    <span class="ctrl__state" id="state"><span class="ctrl__cur" id="stateCur"></span> / <span id="stateEnd"></span></span>
+  </div>
+</section>
+
+<div class="tlwrap">
+  <div class="tl" id="tl">
+    <div class="tl__ruler">
+      <div class="tl__start"><svg width="18" height="16" viewBox="0 0 18 16"><path d="M2 1v14" stroke="currentColor" stroke-width="2"/><path d="M3 1.5h12l-3 4 3 4H3z" fill="currentColor"/></svg>Start <small id="trigger"></small></div>
+      <div class="tl__scale" id="scale"></div>
+    </div>
+    <div class="tl__rows" id="rows"></div>
+    <div class="lane" id="lane"><div class="head" id="head"><div class="head__pin"><button class="grip" id="grip" aria-label="Playhead — drag to scrub, arrow keys step a frame"></button></div><i class="head__line" id="headLine" aria-hidden="true"></i></div></div>
+  </div>
+  <p class="foot">
+    <span class="legend"><i style="background:var(--delay)"></i>delay</span>
+    <span class="legend"><i style="background:var(--dur)"></i>duration</span>
+    <span class="legend"><i class="bar--approx" style="position:static"></i><span id="legendApprox">timing varies at runtime (≈)</span></span>
+    <span class="legend"><i class="bar--repeat" style="position:static"></i>repeats</span>
+    <span class="legend"><i style="width:2px;height:12px;background:var(--dur);border-radius:1px"></i>haptic pulse</span>
+  </p>
+</div>
+
+<div class="sheet" id="assetSheet" hidden>
+  <div class="sheet__scrim" data-close></div>
+  <section class="sheet__panel" role="dialog" aria-modal="true" aria-labelledby="assetTitle">
+    <div class="card__head sheet__head"><h3 class="card__title" id="assetTitle">Lottie assets</h3><span class="count" id="assetCount"></span><div class="top__sp"></div>
+      <button class="sheet__x" type="button" data-close aria-label="Close"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></div>
+    <div class="sheet__body" id="assetList"></div>
+    <div class="sheet__foot"><button class="abtn" id="assetAll" type="button"></button></div>
+  </section>
+</div>
+<div class="toasts" id="toasts" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+/* ═══ SpecKit — generic helpers shared by every spec sheet (do not edit per project) ═══
+   Row helpers: S(spring key, {x0, v0}) · C(curve key) · H(haptic kind, layer, selector, ms | [ms…], note)
+   Maths: springFn(ω, ζ, x0, v0) → { d(t), v(t) } (t in s) · firstT(f, test) → first ms where test(d, v)
+   Layout: rowEnd(row) / sceneEnd(rows) in ms.                                                     */
+window.SpecKit = (() => {
+  const springFn = (w, z, x0, v0 = 0) => { const wd = w * Math.sqrt(1 - z * z), a = z * w;
+    return { d: (t) => Math.exp(-a * t) * (x0 * Math.cos(wd * t) + ((v0 + a * x0) / wd) * Math.sin(wd * t)),
+             v: (t) => Math.exp(-a * t) * (v0 * Math.cos(wd * t) - ((a * v0 + w * w * x0) / wd) * Math.sin(wd * t)) }; };
+  const firstT = (f, test, max = 4) => { for (let t = 0; t < max; t += 0.001) if (test(f.d(t), f.v(t))) return t * 1000; return max * 1000; };
+  const S = (k, extra = {}) => ({ kind: 'spring', k, ...extra });
+  const C = (k) => ({ kind: 'curve', k });
+  // haptics (the prototype's Haptics helper): iOS generator + style, Android vibrate, iOS-Safari fallback
+  const HAP = {
+    tap:     { name: 'tap',     gen: 'UIImpactFeedbackGenerator', style: 'light', vibe: '8ms', call: 'Haptics.tap()' },
+    tick:    { name: 'tick',    gen: 'UISelectionFeedbackGenerator', style: 'selection', vibe: '4ms', call: 'Haptics.tick()' },
+    snap:    { name: 'snap',    gen: 'UIImpactFeedbackGenerator', style: 'medium', intensity: 0.8, vibe: '12ms', call: 'Haptics.snap()' },
+    edge:    { name: 'edge',    gen: 'UIImpactFeedbackGenerator', style: 'rigid', intensity: 0.6, vibe: '10ms', call: 'Haptics.edge()' },
+    success: { name: 'success', gen: 'UINotificationFeedbackGenerator', style: 'success', vibe: '[10, 40, 16]', call: 'Haptics.success()' },
+    error:   { name: 'error',   gen: 'UINotificationFeedbackGenerator', style: 'error', vibe: '[45, 40, 45, 40, 45]', call: 'Haptics.error()' },
+  };
+  const H = (k, layer, sel, at, note, extra = {}) => ({ icon: 'haptic', prop: 'Haptic', layer, sel, delay: Array.isArray(at) ? (at[0] || 0) : at, dur: 10, from: '—', to: '—',
+    ease: { kind: 'haptic', ...HAP[k] }, marks: Array.isArray(at) ? at : [at], note, ...extra });
+  const rowEnd = (r) => r.delay + (r.stagger ? (r.stagger.n - 1) * r.stagger.step : 0) + (r.marks ? Math.max(...r.marks) - r.delay : 0) + r.dur;
+  const sceneEnd = (rows) => Math.max(...rows.filter((r) => !r.grp && !r.repeat).map(rowEnd));
+  // a PP-style sampled spring's length for a travel of |d| (settles to 0.02 of a unit)
+  const sampleLen = (spr, d) => 1000 * Math.max(0.2, Math.log(Math.max(Math.abs(d), 0.02) / 0.02) / (spr.z * spr.w) + 0.05);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));   // real time (for history / tasks to land)
+  return { springFn, firstT, S, C, H, HAP, rowEnd, sceneEnd, sampleLen, wait };
+})();
+</script>
+
+<script id="spec-config">
+/* ═══ PROJECT CONFIG — everything specific to this prototype lives here ═══════════
+   The engine below never changes between projects: it reads window.SPEC only.
+   Full schema: references/config-reference.md · worked example: references/example-noon-config.js
+   Prototype: noon desktop wishlist — the final collection switch, V3 · Carousel (MotionPanel.jsx + panel.css). */
+window.SPEC = (() => {
+  const { springFn, firstT, S, C, rowEnd, sceneEnd, wait: realWait } = SpecKit;
+
+  const PATHS = { 1: '/' };
+  const ITER = { 1: 'Iteration 01 · V3 Carousel (final)' };
+
+  /* ── helpers: cubic-bezier → function → CSS linear() ─────────────────────── */
+  const bez = (x1, y1, x2, y2) => {
+    const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx, cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+    const X = (t) => ((ax * t + bx) * t + cx) * t, Y = (t) => ((ay * t + by) * t + cy) * t;
+    return (x) => { if (x <= 0) return 0; if (x >= 1) return 1; let lo = 0, hi = 1; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (X(m) < x) lo = m; else hi = m; } return Y((lo + hi) / 2); };
+  };
+  const lin = (f, n = 32) => `linear(${Array.from({ length: n + 1 }, (_, i) => +f(i / n).toFixed(4)).join(', ')})`;
+  const clamp01 = (x) => Math.max(0, Math.min(1, x));
+  const r1 = (x) => Math.round(x * 10) / 10;
+
+  /* every curve of the transition, from the code (cubic-bezier control points) */
+  const B = {
+    track: bez(0.3, 0.05, 0.05, 1),     // TRACK_EASE            — MotionPanel.jsx
+    head:  bez(0.45, 0, 0.25, 1),       // titleV · .mp-glyph-fill · selected fan close
+    fade:  bez(0.77, 0, 0.175, 1),      // .mp-stage-wrap --fade-move release
+    back:  bez(0.34, 1.56, 0.64, 1),    // easeOutBack — hover spread (wings)
+    out:   bez(0.23, 1, 0.32, 1),       // EASE_OUT · hover cover + close
+    css:   bez(0, 0, 0.58, 1),          // CSS `ease-out` — hover fill
+  };
+  const SPR = {
+    sel: { name: 'Selection spring', w: 17.8885, z: 0.7826, src: 'MotionPanel.jsx · SPRING { stiffness 320, damping 28 } · `pos` (white row)' },
+  };
+  const CURVE = {
+    track: { name: 'Carousel track (0.3, 0.05, 0.05, 1)', fn: lin(B.track) },
+    head:  { name: 'Heading + glyph (0.45, 0, 0.25, 1)', fn: lin(B.head) },
+    fade:  { name: 'Edge-fade release (0.77, 0, 0.175, 1)', fn: lin(B.fade) },
+    back:  { name: 'Ease-out-back (0.34, 1.56, 0.64, 1)', fn: lin(B.back) },
+    out:   { name: 'Ease-out (0.23, 1, 0.32, 1)', fn: lin(B.out) },
+    cssout:{ name: 'CSS ease-out (0, 0, 0.58, 1)', fn: lin(B.css) },
+    lin:   { name: 'Linear', fn: 'linear(0, 1)' },
+  };
+
+  /* ── the track: geometry straight from MotionPanel.jsx ─────────────────────── */
+  const ITEMS = [7, 2, 1], NAMES = ['All saved items', 'Home decor', 'Sneakers'];
+  const COLS = 4, CARD_H = 484, GAP = 20, TRACK_GAP = 48, SCALE_MIN = 0.75, ROW = 96;
+  const SEC_H = ITEMS.map((n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r * CARD_H + (r - 1) * GAP; });   // 988 · 484 · 484
+  const OFFS = (() => { let o = 0; return SEC_H.map((h) => { const a = o; o += h + TRACK_GAP; return a; }); })();       // 0 · 1036 · 1568
+  const TD = 900;                                                                                                     // TRACK_EASE.duration
+  const yAt = (a, b, t) => -(OFFS[a] + (OFFS[b] - OFFS[a]) * B.track(t / TD));
+  const pitchOf = (k, dist) => (dist > 0 && k > 0 ? OFFS[k] - OFFS[k - 1] : SEC_H[k] + TRACK_GAP);
+  const prog = (k, y) => { const dist = OFFS[k] + y; return Math.min(1, Math.abs(dist) / pitchOf(k, dist)); };
+  const scaleAt = (k, y) => 1 - (1 - SCALE_MIN) * prog(k, y);
+  const opAt = (k, y) => Math.max(0, Math.min(1, 1 - (prog(k, y) - 0.4) / 0.6));
+  // white selection row: motion's granular spring rest (|d| < 0.005 row, |v| < 0.01 row/s) for a travel of n rows
+  const selLen = (n) => Math.round(firstT(springFn(SPR.sel.w, SPR.sel.z, -n, 0), (d, v) => Math.abs(d) < 0.005 && Math.abs(v) < 0.01));
+
+  /* Section scale + opacity are pure functions of the strip's position, so they are sampled from the same
+     curve as the track. One row per section per property (a section the strip passes through gets an "in"
+     and an "out" row). The plot is the exact function, so the live Current value follows the playhead. */
+  function sectionRows(a, b) {
+    const rows = [], lo = Math.min(a, b), hi = Math.max(a, b);
+    for (let k = lo; k <= hi; k++) {
+      let segs;
+      if (k === a) segs = [[0, TD, 'out']];
+      else if (k === b) segs = [[0, TD, 'in']];
+      else { let tC = 0; for (let t = 0; t <= TD; t++) { tC = t; if (Math.abs(yAt(a, b, t) + OFFS[k]) < 1.2) break; } segs = [[0, tC, 'in'], [tC, TD, 'out']]; }
+      for (const [t0, t1, dir] of segs) for (const prop of ['scale', 'opacity']) {
+        const fn = prop === 'scale' ? scaleAt : opAt, v = (t) => fn(k, yAt(a, b, t)), v0 = v(t0), v1 = v(t1);
+        if (Math.abs(v1 - v0) < 0.01) continue;
+        const p = (t) => (v(Math.max(t0, Math.min(t1, t))) - v0) / (v1 - v0);
+        // the row spans only the stretch where the value actually changes (opacity ≥ 0.2%, scale ≥ 0.05% of its travel)
+        const eps = prop === 'opacity' ? 0.002 : 0.0005;
+        let s = t1; for (let t = t0; t <= t1; t++) if (Math.abs(p(t)) > eps) { s = t; break; }
+        let e = t0; for (let t = t1; t >= t0; t--) if (Math.abs(1 - p(t)) > eps) { e = t; break; }
+        const dur = Math.max(1, Math.round(e - s)), mid = (t0 + t1) / 2, dMid = OFFS[k] + yAt(a, b, mid);
+        const val = (x) => `${r1(x * 100)}%`.replace(/^-0%$/, '0%');
+        rows.push({ icon: prop, prop: prop === 'scale' ? 'Scale' : 'Opacity', layer: `Section · ${NAMES[k]}`, sel: `.mp-track-sec:nth-child(${k + 1})`,
+          delay: Math.round(s), dur, from: val(v0), to: val(v1),
+          ease: { kind: 'custom', label: prop === 'scale' ? 'Bound to the track' : 'Bound to the track', tag: prop === 'scale' ? 'Track-bound scale' : 'Track-bound opacity',
+            info: [['Driven by', 'strip position (no tween of its own)'], ['Pitch', `${pitchOf(k, dMid)}px`], ['Anchor', prop === 'scale' ? 'left · 50% (0% 50%)' : '—']],
+            code: prop === 'scale' ? 'scale = 1 − 0.25 · min(1, |dist| ÷ pitch)' : 'opacity = clamp(1 − (progress − 0.4) ÷ 0.6, 0, 1)',
+            plot: { f: (tau) => p(s + tau * 1000), span: dur / 1000 } },
+          note: prop === 'scale'
+            ? `${dir === 'out' ? 'Recedes' : 'Grows'} 100% ↔ 75% about its left edge, so it stays lined up with the rail. It is a pure function of the strip's position (no tween of its own), so it follows the track's curve exactly.`
+            : `${dir === 'out' ? 'Holds full opacity for the first 40% of a pitch, then fades out linearly.' : 'Reaches full opacity once it is within 40% of a pitch of the centre.'} Also a pure function of the strip's position.` });
+      }
+    }
+    return rows;
+  }
+
+  /* ── rows shared by the three tab-click scenes and the wheel scene ───────────────────────────────── */
+  const glyphSel = (k) => `.mp-row:nth-of-type(${k + 1}) .mp-glyph-fill`;
+  const rowSel = (k) => `.mp-row:nth-of-type(${k + 1})`;
+  function switchRows(a, b, o = {}) {
+    const rows = [], n = Math.abs(b - a), down = b > a;
+    const dist = Math.abs(OFFS[b] - OFFS[a]);
+    rows.push({ grp: 'Rail', at: 0, note: 'The tab you chose and the one you left.' });
+    rows.push({ icon: 'move', prop: 'Move Y', layer: 'Selection', sel: '.mp-sel', delay: 0, dur: selLen(n), from: `${a * ROW}px`, to: `${b * ROW}px`, ease: S('sel'),
+      note: `The white row (with its two inverted corners) springs ${n * ROW}px ${down ? 'down' : 'up'} to the chosen tab: ${n} step${n > 1 ? 's' : ''} × 96px. It overshoots ~1.9% (${r1(n * ROW * 0.019)}px) and settles; an interrupted switch retargets from the live position.` });
+    rows.push({ icon: 'opacity', prop: 'Opacity', layer: `Glyph · ${NAMES[a]}`, sel: glyphSel(a), delay: 0, dur: 450, from: '100%', to: '0%', ease: C('head'),
+      note: 'The blue 4×22 marker never travels. On the tab you leave, its blue fill fades out in place over the grey glyph (#d0d4dd).' });
+    rows.push({ icon: 'opacity', prop: 'Opacity', layer: `Glyph · ${NAMES[b]}`, sel: glyphSel(b), delay: 0, dur: 450, from: '0%', to: '100%', ease: C('head'),
+      note: 'Fades in on the chosen tab on the same curve and 450ms as the heading, so the two read as one beat.' });
+    if (o.hover) {
+      rows.push({ icon: 'move', prop: 'Spread', layer: 'Card fan', sel: `${rowSel(b)} .mp-fan-card`, delay: 0, dur: 450, from: '4px', to: '0px', ease: C('head'),
+        note: 'The pointer is still on the tab, so its hover spread (wings out 4px, 7° tilt, cover lifted 2px) eases closed over 450ms instead of the usual 160ms. No hop, no bounce.' });
+      rows.push({ icon: 'move', prop: 'Tilt', layer: 'Card fan', sel: `${rowSel(b)} .mp-fan-card`, delay: 0, dur: 450, from: '7deg', to: '0deg', ease: C('head') });
+      rows.push({ icon: 'move', prop: 'Lift', layer: 'Card fan', sel: `${rowSel(b)} .mp-fan-card`, delay: 0, dur: 450, from: '2px', to: '0px', ease: C('head') });
+      rows.push({ icon: 'move', prop: 'Cover tilt', layer: 'Card fan', sel: `${rowSel(b)} .mp-fan-card`, delay: 0, dur: 450, from: '−1.5deg', to: '0deg', ease: C('head') });
+      rows.push({ icon: 'opacity', prop: 'Opacity', layer: 'Hover fill', sel: rowSel(b), delay: 0, dur: 150, from: '100%', to: '0%', ease: C('cssout'),
+        note: 'The 3.5% ink wash behind a hovered tab goes as soon as the tab is selected (CSS ease-out, 150ms).' });
+    }
+    rows.push({ grp: 'Heading', at: 0, note: 'The old and new names overlap in one spot (popLayout).' });
+    rows.push({ icon: 'opacity', prop: 'Opacity', layer: `Heading · ${NAMES[a]}`, sel: '.mp-title', delay: 0, dur: 450, from: '100%', to: '0%', ease: C('head'),
+      note: 'The outgoing name dissolves into a 10px blur while the new one resolves out of it. The heading never moves — it holds its baseline.' });
+    rows.push({ icon: 'size', prop: 'Blur', layer: `Heading · ${NAMES[a]}`, sel: '.mp-title', delay: 0, dur: 450, from: '0px', to: '10px', ease: C('head') });
+    rows.push({ icon: 'opacity', prop: 'Opacity', layer: `Heading · ${NAMES[b]}`, sel: '.mp-title', delay: 0, dur: 450, from: '0%', to: '100%', ease: C('head'),
+      note: 'Same 450ms in, same curve, starting together with the exit.' });
+    rows.push({ icon: 'size', prop: 'Blur', layer: `Heading · ${NAMES[b]}`, sel: '.mp-title', delay: 0, dur: 450, from: '10px', to: '0px', ease: C('head') });
+    rows.push({ grp: 'Content track', at: 0, note: 'All collections sit on one vertical strip; only the strip moves.' });
+    rows.push({ icon: 'move', prop: 'Move Y', layer: 'Track', sel: '.mp-track', delay: 0, dur: TD, from: `${-OFFS[a]}px`, to: `${-OFFS[b]}px`, ease: C('track'),
+      note: `One tween, ${TD}ms, cubic-bezier(0.3, 0.05, 0.05, 1): the strip travels ${dist}px (${a === 0 || b === 0 ? 'section height 988 + 48 gap' : 'section height 484 + 48 gap'}${n > 1 ? ' + 532 for the second step' : ''}). Sections sit ${TRACK_GAP}px apart. Switching mid-flight retargets the strip from where it is, so two sections can never land on the same spot.` });
+    rows.push(...sectionRows(a, b));
+    rows.push({ grp: 'Edge fade', at: 0, note: 'A grid sliding past the stage edge would shear flat, so the stage fades and blurs its top and bottom edges while it moves.' });
+    rows.push({ icon: 'size', prop: 'Fade band', layer: 'Edge fade', sel: '.mp-stage-wrap', delay: 0, dur: 60, from: '0px', to: '14px', ease: C('lin'),
+      note: 'On the switch the band is up in 60ms: a 14px mask at the stage top and bottom with a 1.5px backdrop blur (data-moving). Nothing else on the page changes.' });
+    rows.push({ icon: 'size', prop: 'Fade band', layer: 'Edge fade', sel: '.mp-stage-wrap', delay: 480, dur: 480, from: '14px', to: '0px', ease: C('fade'),
+      note: 'Released 480ms in (onSettle, while the strip is ~95% there), then dissolves over 480ms, so it goes with the last of the movement instead of vanishing after it.' });
+    return rows;
+  }
+
+  /* ── hover: the card fan ───────────────────────────────────────────────────── */
+  const HOV = 700;     // pointer leaves 700ms after it arrived (scripted)
+  function hoverRows() {
+    const k = 1, f = (n) => `${rowSel(k)} .mp-fan-${n}`;
+    return [
+      { grp: 'Pointer enters an unselected tab', at: 0, note: 'Only unselected tabs react, and only for fine pointers (hover: hover).' },
+      { icon: 'opacity', prop: 'Opacity', layer: 'Hover fill', sel: rowSel(k), delay: 0, dur: 150, from: '0%', to: '100%', ease: C('cssout'), note: 'A 3.5% ink wash over the whole 280×96 tab.' },
+      { icon: 'move', prop: 'Move X', layer: 'Card fan · Left card', sel: f('l'), delay: 0, dur: 260, from: '0px', to: '−4px', ease: C('back'),
+        note: 'The left wing slides out 4px (--spread) with easeOutBack, overshooting ~0.4px. The 68×56 fan: wings ±8° at rest, behind the cover.' },
+      { icon: 'move', prop: 'Rotate', layer: 'Card fan · Left card', sel: f('l'), delay: 0, dur: 260, from: '−8deg', to: '−15deg', ease: C('back'), note: 'Tilts a further 7° (--tilt).' },
+      { icon: 'move', prop: 'Move X', layer: 'Card fan · Right card', sel: f('r'), delay: 45, dur: 260, from: '0px', to: '4px', ease: C('back'),
+        note: 'The right wing trails the left by 45ms so the stack spreads instead of snapping open as one object.' },
+      { icon: 'move', prop: 'Rotate', layer: 'Card fan · Right card', sel: f('r'), delay: 45, dur: 260, from: '8deg', to: '15deg', ease: C('back') },
+      { icon: 'move', prop: 'Move Y', layer: 'Card fan · Cover card', sel: f('mid'), delay: 0, dur: 200, from: '0px', to: '−2px', ease: C('out'),
+        note: 'The cover lifts 2px (--lift) and tips −1.5° (--cover) as if picked up. No overshoot on the cover.' },
+      { icon: 'move', prop: 'Rotate', layer: 'Card fan · Cover card', sel: f('mid'), delay: 0, dur: 200, from: '0deg', to: '−1.5deg', ease: C('out') },
+      { grp: 'Pointer leaves', at: HOV, note: 'The fan shuts quietly: one 160ms ease-out, no overshoot, no stagger.' },
+      { icon: 'opacity', prop: 'Opacity', layer: 'Hover fill', sel: rowSel(k), delay: HOV, dur: 150, from: '100%', to: '0%', ease: C('cssout') },
+      { icon: 'move', prop: 'Move X', layer: 'Card fan · Left card', sel: f('l'), delay: HOV, dur: 160, from: '−4px', to: '0px', ease: C('out'), note: 'Wings and cover all close together, 160ms, ease-out (0.23, 1, 0.32, 1).' },
+      { icon: 'move', prop: 'Rotate', layer: 'Card fan · Left card', sel: f('l'), delay: HOV, dur: 160, from: '−15deg', to: '−8deg', ease: C('out') },
+      { icon: 'move', prop: 'Move X', layer: 'Card fan · Right card', sel: f('r'), delay: HOV, dur: 160, from: '4px', to: '0px', ease: C('out') },
+      { icon: 'move', prop: 'Rotate', layer: 'Card fan · Right card', sel: f('r'), delay: HOV, dur: 160, from: '15deg', to: '8deg', ease: C('out') },
+      { icon: 'move', prop: 'Move Y', layer: 'Card fan · Cover card', sel: f('mid'), delay: HOV, dur: 160, from: '−2px', to: '0px', ease: C('out') },
+      { icon: 'move', prop: 'Rotate', layer: 'Card fan · Cover card', sel: f('mid'), delay: HOV, dur: 160, from: '−1.5deg', to: '0deg', ease: C('out') },
+    ];
+  }
+
+  /* ── wheel: scroll past the grid edge ──────────────────────────────────────── */
+  const WHEEL = { kind: 'custom', label: 'Overscroll gesture', tag: 'Wheel gesture',
+    info: [['Threshold', '48px of deltaY, accumulated'], ['Min gap', '380ms between switches (queued, not dropped)'], ['New gesture', '180ms pause · reversal ≥ 10px · surge while coasting'],
+      ['Speed handed on', 'capped at 1400px/s (unused by the carousel)'], ['Content nudge', 'none — cards and labels stay put'], ['Last collection', 'no switch, no movement']],
+    code: 'wheel.deltaY accumulates at an edge → |acc| ≥ 48 → setActive(active ± 1)', plot: { f: (t) => clamp01(t / 0.016), span: 0.016 } };
+  function wheelRows() {
+    const a = 2, b = 1;
+    return [
+      { grp: 'Wheel gesture', at: 0, note: 'Nothing in the stage scrolls, so every wheel event is at an edge.' },
+      { icon: 'flag', prop: 'Overscroll', layer: 'Wheel gesture', sel: '.mp-stage', delay: 0, dur: 16, from: '0px', to: '48px', ease: WHEEL,
+        note: 'The switch fires the instant the accumulated wheel delta reaches 48px: the first event of a mouse notch (~100px), or within a few frames of a trackpad flick. One gesture = one switch; the wheel re-arms after a 180ms pause, a reversal, or a fresh flick on top of momentum.' },
+      ...switchRows(a, b),
+    ];
+  }
+
+  /* ── reduced motion (documented from the code; not recordable) ───────────────── */
+  function reducedRows() {
+    return [
+      { grp: 'Instant', at: 0, note: 'reduce → the strip and the selection snap; no edge fade.' },
+      { icon: 'move', prop: 'Move Y', layer: 'Selection', sel: '.mp-sel', delay: 0, dur: 1, from: '0px', to: '96px', ease: C('lin'), note: 'The white row jumps to the chosen tab (animate with duration 0).' },
+      { icon: 'move', prop: 'Move Y', layer: 'Track', sel: '.mp-track', delay: 0, dur: 1, from: '0px', to: '−1036px', ease: C('lin'), note: 'The strip is set in place — no travel, no scale or opacity tween: the chosen section is simply shown. The edge fade stays off (--fade-move is 0).' },
+      { grp: 'Still animated', at: 0, note: 'Fades that carry no travel are kept.' },
+      { icon: 'opacity', prop: 'Opacity', layer: 'Heading · All saved items', sel: '.mp-title', delay: 0, dur: 450, from: '100%', to: '0%', ease: C('head'), note: 'The heading still cross-fades over 450ms, but without the 10px blur.' },
+      { icon: 'opacity', prop: 'Opacity', layer: 'Heading · Home decor', sel: '.mp-title', delay: 0, dur: 450, from: '0%', to: '100%', ease: C('head') },
+      { icon: 'opacity', prop: 'Opacity', layer: 'Glyph · All saved items', sel: glyphSel(0), delay: 0, dur: 450, from: '100%', to: '0%', ease: C('head'), note: 'The rail marker fade is a CSS transition with no reduced-motion override.' },
+      { icon: 'opacity', prop: 'Opacity', layer: 'Glyph · Home decor', sel: glyphSel(1), delay: 0, dur: 450, from: '0%', to: '100%', ease: C('head') },
+      { icon: 'move', prop: 'Spread', layer: 'Card fan · hover', sel: `${rowSel(1)} .mp-fan-card`, delay: 0, dur: 120, from: '0px', to: '1px', ease: C('out'), note: 'Hover is gentler, not gone: wings 1px and 2° out, cover flat, 120ms ease-out, no overshoot or stagger.' },
+      { icon: 'move', prop: 'Tilt', layer: 'Card fan · hover', sel: `${rowSel(1)} .mp-fan-card`, delay: 0, dur: 120, from: '0deg', to: '2deg', ease: C('out') },
+    ];
+  }
+
+  /* ═══ scenes ═════════════════════════════════════════════════════════════ */
+  const SCENES = [
+    { id: 0, name: 'Overview', trig: 'the full journey, played end to end', summary: 'Hover → tab down → tab up → two-step jump → scroll up → hover', overview: true },
+    { id: 1, name: 'Switch to a tab below', trig: 'Click “Home decor” in the rail (All saved items → Home decor)', rows: () => switchRows(0, 1, { hover: true }) },
+    { id: 2, name: 'Switch to a tab above', trig: 'Click “All saved items” in the rail (Home decor → All saved items)', rows: () => switchRows(1, 0, { hover: true }) },
+    { id: 3, name: 'Two-step jump', trig: 'Click “Sneakers” in the rail (All saved items → Sneakers, skipping Home decor)', rows: () => switchRows(0, 2, { hover: true }) },
+    { id: 4, name: 'Hover a tab', trig: 'Move the pointer onto an unselected tab, then away', rows: () => hoverRows() },
+    { id: 5, name: 'Scroll past the edge', trig: 'Wheel / trackpad past the grid edge (Sneakers → Home decor, wheel up)', rows: () => wheelRows() },
+    { id: 6, name: 'Reduced motion', trig: 'System setting “Reduce motion” — documented from the code (the preview stays at rest)', rows: () => reducedRows() },
+  ];
+  const ORDER = [4, 1, 2, 3, 5, 4];     // the journey: hover, then each trigger in turn, ending on a hover
+  function overview(v) {
+    const at = [], len = ORDER.map((id) => sceneEnd(SCENES[id].rows(v)));
+    let t = 200; ORDER.forEach((id, i) => { at.push(t); t += len[i] + 700; });
+    const rows = ORDER.map((id, i) => ({ icon: 'flag', prop: `${id}`, layer: SCENES[id].name, sel: null, delay: at[i], dur: len[i], scene: id, from: '', to: '', ease: { kind: 'scene' }, note: `${SCENES[id].trig}.` }));
+    const hov = (k, on) => (d) => { d.querySelectorAll('.mp-row').forEach((r, j) => r.classList.toggle('is-hover', on && j === k)); };
+    const beats = [
+      { at: at[0], fire: (d, w) => FIRE[4](d, w, 1) },                                      // hover Home decor (leaves again at +700)
+      { at: at[1] - 450, fire: hov(1, true) }, { at: at[1], fire: (d, w) => FIRE[1](d, w) },  // pointer back on Home decor, click
+      { at: at[2] - 450, fire: hov(0, true) }, { at: at[2], fire: (d, w) => FIRE[2](d, w) },  // → All saved items
+      { at: at[3] - 450, fire: hov(2, true) }, { at: at[3], fire: (d, w) => FIRE[3](d, w) },  // → Sneakers
+      { at: at[4] - 300, fire: hov(-1, false) }, { at: at[4], fire: (d, w) => FIRE[5](d, w) }, // pointer into the grid, wheel up → Home decor
+      { at: at[5], fire: (d, w) => FIRE[4](d, w, 0) },                                       // hover All saved items
+    ];
+    return { rows, beats };
+  }
+
+  /* ═══ driving the real prototype ═════════════════════════════════════════════
+     The page is a 1440px noon desktop page; the spec shows just the panel (nav, list bar, help band and
+     footer hidden inside the recorder) at 1200×1080 plus a 24px margin. :hover can't be produced in the
+     recorder, so the hover rules of panel.css are cloned onto an `.is-hover` class (read from the
+     stylesheet itself, never retyped) and the scenes toggle that class. */
+  const until = async (e, cond, max = 8000) => { const lim = e.vt + max; while (!cond()) { if (e.vt >= lim) throw new Error('timeout'); await e.advanceTo(e.vt + 16, 16); } };
+  const trackY = (d) => { const t = d.querySelector('.mp-track'); return t ? new d.defaultView.DOMMatrix(d.defaultView.getComputedStyle(t).transform).m42 : NaN; };
+  const settledAt = (d, k) => Math.abs(trackY(d) + OFFS[k]) < 0.01 && d.querySelectorAll('h1.mp-title').length === 1 &&
+    !d.querySelector('.mp-stage-wrap').hasAttribute('data-moving') && d.getAnimations().every((a) => a.playState === 'finished');
+  const hoverRules = (d) => {
+    let out = '';
+    const walk = (rules, inHover) => { for (const r of rules) {
+      if (r.cssRules && r.media) { if (/hover/.test(r.media.mediaText)) walk(r.cssRules, true); }
+      else if (r.selectorText && r.selectorText.includes(':hover') && (inHover || !/proto-/.test(r.selectorText))) out += r.cssText.split(':hover').join('.is-hover') + '\n'; } };
+    for (const sh of d.styleSheets) { try { walk(sh.cssRules, false); } catch (_) {} }
+    return out;
+  };
+  const ST = {
+    async ready(d, w, e) {
+      for (let i = 0; i < 600 && !(w.__ready && d.querySelector('.mp-track-sec .mp-card') && d.querySelectorAll('.mp-row').length === 3); i++) { await e.advanceTo(e.vt + 16, 16); await realWait(10); }   // React renders only while the clock moves
+      /* The preview replays class / style / a fixed list of attributes — not aria-selected, which is what panel.css
+         keys the selected tab on (glyph, fan close, hover rules). So inside the recorder the stylesheet's own rules are
+         re-emitted on an `.is-sel` class that mirrors aria-selected; the values come from panel.css, nothing is retyped. */
+      for (const lk of [...d.querySelectorAll('link[rel~="stylesheet"]')]) {
+        let txt = ''; try { txt = [...lk.sheet.cssRules].map((r) => r.cssText).join('\n'); } catch (_) { continue; }
+        if (!txt.includes('aria-selected')) continue;
+        const cp = d.createElement('style'); cp.textContent = txt.split('[aria-selected="true"]').join('.is-sel'); lk.replaceWith(cp);
+      }
+      const syncSel = () => d.querySelectorAll('.mp-row').forEach((r) => r.classList.toggle('is-sel', r.getAttribute('aria-selected') === 'true'));
+      syncSel(); new w.MutationObserver(syncSel).observe(d.querySelector('.mp-rail'), { subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+      const st = d.createElement('style');
+      st.textContent = `.nav,.listbar,.help,footer,.proto-picker,.vswitch{display:none!important}.page{width:1248px!important;background:transparent!important}.middle{padding:24px!important}\n` + hoverRules(d);
+      d.head.appendChild(st);
+      await w.document.fonts.ready;
+      await e.advanceTo(e.vt + 300, 16);
+      await until(e, () => settledAt(d, 0));
+    },
+    async hover1(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[1].classList.add('is-hover'); await e.advanceTo(e.vt + 700, 16); },
+    async home(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[1].click(); await until(e, () => settledAt(d, 1)); },
+    async homeHoverAll(d, w, e) { await ST.home(d, w, e); d.querySelectorAll('.mp-row')[0].classList.add('is-hover'); await e.advanceTo(e.vt + 700, 16); },
+    async hover2(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[2].classList.add('is-hover'); await e.advanceTo(e.vt + 700, 16); },
+    async sneakers(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[2].click(); await until(e, () => settledAt(d, 2)); },
+  };
+  const PREP = { 1: 'hover1', 2: 'homeHoverAll', 3: 'hover2', 4: 'ready', 5: 'sneakers', 6: 'ready' };
+  const wheel = (d, w, dy) => d.querySelector('.mp-card').dispatchEvent(new w.WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true }));
+  const FIRE = {
+    1: (d) => d.querySelectorAll('.mp-row')[1].click(),
+    2: (d) => d.querySelectorAll('.mp-row')[0].click(),
+    3: (d) => d.querySelectorAll('.mp-row')[2].click(),
+    4: (d, w, k = 1) => { const row = d.querySelectorAll('.mp-row')[k]; row.classList.add('is-hover'); w.setTimeout(() => row.classList.remove('is-hover'), HOV); },
+    5: (d, w) => wheel(d, w, -100),
+    6: () => {},
+  };
+
+  return {
+    title: 'Full Flow — Animation Spec', device: { w: 1248, h: 1128, label: 'Desktop panel (1200×1080 on a 1248×1128 page)' },
+    paths: PATHS, iterations: ITER, springs: SPR, curves: CURVE, scenes: SCENES, overview, states: ST, prep: { ...PREP, 0: 'ready' }, fire: FIRE,
+    assets: [],
+  };
+})();
+</script>
+
+<script>
+/* ═══ SPEC SHEET ENGINE — identical in every project (copy as-is; configure via window.SPEC) ═══ */
+(() => {
+  const { paths: PATHS, iterations: ITER, springs: SPR, curves: CURVE, scenes: SCENES, overview, states: ST, prep: PREP, fire: FIRE } = window.SPEC;
+  const { springFn, rowEnd, sceneEnd } = window.SpecKit;
+  const DW = (window.SPEC.device || {}).w || 375, DH = (window.SPEC.device || {}).h || 812;
+  /* ═══ helpers ═══════════════════════════════════════════════════════════ */
+  const $ = (id) => document.getElementById(id);
+  const fmtS = (ms) => `${(+(ms / 1000).toFixed(2))}s`;
+  const fmtMs = (ms) => `${Math.round(ms)}ms`;
+  const ICON = {
+    scale: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M4 16 16 4M4 16v-5M4 16h5M16 4h-5M16 4v5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    opacity: '<svg width="20" height="20" viewBox="0 0 20 20"><g fill="currentColor"><rect x="3" y="3" width="4" height="4"/><rect x="11" y="3" width="4" height="4"/><rect x="7" y="7" width="4" height="4"/><rect x="15" y="7" width="2" height="4"/><rect x="3" y="11" width="4" height="4"/><rect x="11" y="11" width="4" height="4"/><rect x="7" y="15" width="4" height="2"/></g><g fill="#c7c7cc"><rect x="7" y="3" width="4" height="4"/><rect x="3" y="7" width="4" height="4"/><rect x="11" y="7" width="4" height="4"/><rect x="7" y="11" width="4" height="4"/><rect x="15" y="11" width="2" height="4"/></g></svg>',
+    move: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2v16M2 10h16" stroke="currentColor" stroke-width="1.6"/><path d="m10 1.5 2.4 3H7.6zM10 18.5l2.4-3H7.6zM1.5 10l3-2.4v4.8zM18.5 10l-3-2.4v4.8z" fill="currentColor"/></svg>',
+    size: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2.5v15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m6.5 6 3.5-3.5L13.5 6M6.5 14l3.5 3.5 3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 2.5h14M3 17.5h14" stroke="#c7c7cc" stroke-width="1.4"/></svg>',
+    haptic: '<svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="6.5" y="3" width="7" height="14" rx="1.8" stroke="currentColor" stroke-width="1.6"/><path d="M3.5 7v6M1.5 8.5v3M16.5 7v6M18.5 8.5v3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    flag: '<svg width="18" height="16" viewBox="0 0 18 16"><path d="M2 1v14" stroke="currentColor" stroke-width="2"/><path d="M3 1.5h12l-3 4 3 4H3z" fill="currentColor"/></svg>',
+  };
+  function linearAt(fn, u) {
+    const parts = fn.replace(/^linear\(|\)$/g, '').split(',').map((s) => s.trim().split(/\s+/));
+    const pts = parts.map((p) => ({ y: +p[0], x: p[1] ? parseFloat(p[1]) / 100 : null }));
+    pts[0].x ??= 0; pts[pts.length - 1].x ??= 1;
+    for (let i = 1; i < pts.length - 1; i++) if (pts[i].x == null) { let j = i; while (pts[j].x == null) j++; const a = pts[i - 1].x, b = pts[j].x; for (let k = i; k < j; k++) pts[k].x = a + ((b - a) * (k - i + 1)) / (j - i + 1); }
+    for (let i = 1; i < pts.length; i++) if (u <= pts[i].x) { const p = pts[i - 1], q = pts[i]; return p.y + ((q.y - p.y) * (u - p.x)) / ((q.x - p.x) || 1); }
+    return 1;
+  }
+  function springProgress(e) { const s = SPR[e.k], x0 = e.x0 ?? -1, f = springFn(s.w, s.z, x0, e.v0 ?? 0); return (t) => 1 - f.d(t) / x0; }
+  function springStats(e) {
+    const p = springProgress(e); let peak = 0, settle = 0;
+    for (let t = 0; t < 4; t += 0.001) { const y = p(t); peak = Math.max(peak, y); if (Math.abs(1 - y) > 0.01) settle = t; }
+    return { overshoot: Math.max(0, peak - 1) * 100, settle: settle * 1000 };
+  }
+
+  /* ═══ state ═══════════════════════════════════════════════════════════════ */
+  const qs = new URLSearchParams(location.search);
+  let v = +qs.get('v') || 1; if (!PATHS[v]) v = 1;
+  let sc = qs.has('s') ? +qs.get('s') : 0; if (!SCENES[sc]) sc = 0;
+  let rows = [], beats = [], END = 2000, selected = -1, layerFilter = '';
+  const SPEEDS = [1, 0.5, 0.25]; let speedIdx = 0;
+
+  /* ═══ flow list + timeline ═══════════════════════════════════════════════ */
+  const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  // the layers a scene animates, in timeline order: [name, { sels, n }]
+  const layersOf = (rs) => { const m = new Map();
+    rs.forEach((r) => { if (r.grp || r.scene != null || !r.sel) return; const e = m.get(r.layer) || { sels: new Set(), n: 0 }; e.sels.add(r.sel); e.n++; m.set(r.layer, e); });
+    return [...m.entries()]; };
+  const LAYER_ICO = '<svg class="tree__ico" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.2 1.8"/></svg>';
+  let treeOpenedFor = null, treeOpenedAt = 0;                   // the tree animates in when its scene opens, not on every selection
+  function renderFlow() {
+    if (treeOpenedFor !== sc) { treeOpenedFor = sc; treeOpenedAt = performance.now(); }
+    const fresh = performance.now() - treeOpenedAt < 300;
+    $('flow').innerHTML = SCENES.map((s) => {
+      const len = s.overview ? sceneEnd(overview(v).rows) : sceneEnd(s.rows(v));
+      const kids = s.id === sc && !s.overview ? layersOf(rows) : [];
+      const curLayer = view === 'track' && rows[selected] ? rows[selected].layer : null;
+      return `<li${kids.length ? ' class="is-open"' : ''}><button data-s="${s.id}" aria-pressed="${s.id === sc && view === 'scene'}" aria-current="${s.id === sc}"${kids.length ? ' aria-expanded="true"' : ''}><span class="n">${String(s.id).padStart(2, '0')}</span>
+        <span class="nm">${s.name}${s.varies ? '<span class="tag tag--warm">varies</span>' : ''}</span><span class="len">${fmtS(len)}</span>
+</button>${kids.length ? `
+        <ul class="tree${fresh ? ' is-new' : ''}" role="group" aria-label="Layers in ${esc(s.name)}">${kids.map(([l, e]) => `<li><button data-l="${esc(l)}" aria-pressed="${view === 'layer' && layerView === l}"${curLayer === l ? ' data-cur' : ''}>${LAYER_ICO}<span class="tree__nm">${l}</span><span class="tree__n">${e.n}</span></button></li>`).join('')}</ul>` : ''}</li>`;
+    }).join('');
+  }
+  const pct = (ms) => `${(ms / END) * 100}%`;
+  function bars(r) {
+    const lbl = (ms) => (ms / END) * 1000 > 34;
+    const tight = r.marks && rowEnd(r) / END > 0.8;
+    const sum = r.stagger ? `${fmtS(r.dur)} · ×${r.stagger.n} / ${r.stagger.step}ms`
+      : r.marks && r.ease.kind === 'haptic' ? `${r.marks.length > 1 ? `×${r.marks.length} · ` : ''}${r.ease.style}${r.ease.intensity ? ` @${r.ease.intensity}` : ''}`
+      : r.marks ? (r.marks.length > 1 ? `×${r.marks.length} · ${r.ease.ms}ms each` : `${r.ease.ms}ms`) : '';
+    let h = r.delay > 0 ? `<div class="bar bar--delay" style="left:0;width:${pct(r.delay)}">${lbl(r.delay) ? `<span>${r.approx ? '≈' : ''}${fmtS(r.delay)}${tight ? ` → ${sum}` : ''}</span>` : ''}</div>` : '';
+    if (r.marks) {
+      h += r.marks.map((m) => `<div class="bar bar--mark" style="left:${pct(m)}"></div>`).join('');
+      if (!tight) h += `<span class="after" style="left:${pct(Math.max(...r.marks))}">${sum}</span>`;
+    } else if (r.stagger) {
+      // one clean bar from the first element's start to the last one's end; the step count and gap
+      // ride in the label (inside when the bar has room, else just after it)
+      const span = rowEnd(r) - r.delay, roomy = span / END > 0.3;
+      h += `<div class="bar bar--dur" style="left:${pct(r.delay)};width:${pct(Math.min(span, END - r.delay))}">${roomy ? `<span>${sum}</span>` : ''}</div>`;
+      if (!roomy) h += `<span class="after" style="left:${pct(rowEnd(r))}">${sum}</span>`;
+    } else {
+      const cls = r.scene != null ? ' bar--scene' : r.approx ? ' bar--approx' : r.repeat ? ' bar--repeat' : '';
+      h += `<div class="bar bar--dur${cls}" style="left:${pct(r.delay)};width:${pct(Math.min(r.dur, END - r.delay))}">${lbl(r.dur) ? `<span>${r.approx ? '≈' : ''}${fmtS(r.dur)}${r.repeat ? ' ↻' : ''}</span>` : ''}</div>`;
+    }
+    return h;
+  }
+  // R20 · two properties on one layer with identical timing (delay, duration, stagger) are one row:
+  // "Scale · Move Y". Only within a group, never for haptics or marks; each keeps its own values in .parts
+  function mergeRows(src) {
+    const out = [], seen = new Map();
+    const key = (r) => [r.layer, r.sel, Math.round(r.delay), Math.round(r.dur), r.stagger ? `${r.stagger.n}/${r.stagger.step}/${r.stagger.order}` : '', !!r.approx, !!r.repeat].join('|');
+    src.forEach((r) => {
+      if (r.grp) { seen.clear(); out.push(r); return; }
+      if (r.marks || r.scene != null || r.ease.kind === 'haptic') { out.push(r); return; }
+      const k = key(r), m = seen.get(k);
+      if (!m) { const row = { ...r, parts: [r] }; seen.set(k, row); out.push(row); return; }
+      m.parts.push(r); m.prop = m.parts.map((x) => x.prop).join(' · ');
+    });
+    out.forEach((r) => { if (r.parts && r.parts.length < 2) delete r.parts; });
+    return out;
+  }
+  /* the ruler adapts to the lane's width: the label step is the smallest round value that keeps labels
+     ≥ 64 px apart (minor ticks only where they get ≥ 8 px); the scene's end is always labelled and any
+     label that would collide with it is dropped. Rebuilt whenever the lane resizes. */
+  let LAST = 0, scaleW = 0;
+  const STEPS = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 15000, 30000, 60000];
+  function renderScale() {
+    const el = $('scale'), w = el.clientWidth || 600; scaleW = w;
+    const pxPerMs = w / END, gap = (ms) => ms * pxPerMs;
+    const major = STEPS.find((st) => gap(st) >= 64) || STEPS[STEPS.length - 1];
+    const minor = [major / 5, major / 4, major / 2].find((st) => gap(st) >= 8);   // undefined → no minor ticks
+    let s = `<span class="tick tick--zero" style="left:0">0</span>`;
+    if (minor) for (let t = minor; t < END; t += minor) if (Math.round(t) % major) s += `<span class="tick tick--minor" style="left:${pct(t)}">.</span>`;
+    for (let t = major; t < END; t += major) if (gap(Math.abs(t - LAST)) >= 56 && gap(END - t) >= 20) s += `<span class="tick" style="left:${pct(t)};color:var(--ink-3)">${fmtS(t)}</span>`;
+    s += `<span class="tick" style="left:${pct(LAST)}">${fmtS(LAST)}</span>`;
+    el.innerHTML = s;
+  }
+  new ResizeObserver(() => { const w = $('scale').clientWidth; if (w && Math.abs(w - scaleW) > 1) renderScale(); }).observe($('scale'));
+  function renderTimeline() {
+    const S0 = SCENES[sc];
+    if (S0.overview) { const o = overview(v); rows = o.rows; beats = o.beats; } else { rows = mergeRows(S0.rows(v)); beats = []; }
+    const last = sceneEnd(rows);
+    const unit = last > 6000 ? 1000 : last > 2400 ? 500 : 100;
+    END = Math.ceil((last + Math.max(60, last * 0.05)) / unit) * unit;
+    LAST = last; renderScale();
+    $('trigger').textContent = `· ${S0.trig}`;
+    $('rows').innerHTML = rows.map((r, i) => r.grp
+      ? `<div class="grp"><b>${r.grp}</b><span>@ ${fmtMs(r.at)}</span></div>`
+      : `<div class="row" role="button" tabindex="0" data-i="${i}" aria-selected="false">
+           <div class="row__lab">${ICON[r.icon]}<b>${r.scene != null ? `<em>${r.prop.padStart(2, '0')}</em>` : r.prop}</b><span>${r.layer}</span></div>
+           <div class="row__trk">${bars(r)}</div></div>`).join('');
+    applyFilter();
+    showScene();
+    $('title').textContent = window.SPEC.title;
+    $('back').href = PATHS[v];
+    setHead(END); renderFlow();
+  }
+  function applyFilter() {
+    document.querySelectorAll('.row').forEach((el) => el.classList.toggle('is-dim', !!layerFilter && rows[+el.dataset.i].layer !== layerFilter));
+  }
+  function setHead(ms) { $('head').style.left = `${Math.min(1, Math.max(0, ms / END)) * 100}%`; }
+
+  /* ═══ inspector ═══════════════════════════════════════════════════════════ */
+  function easeFn(r) {
+    const e = r.ease;
+    if (e.kind === 'spring') return { f: springProgress(e), span: r.dur / 1000 };
+    if (e.kind === 'curve') return { f: (t) => linearAt(CURVE[e.k].fn, t), span: 1 };
+    if (e.kind === 'custom' && e.plot) return { f: e.plot.f, span: e.plot.span };
+    return null;
+  }
+  function plot(r) {
+    const E = easeFn(r); if (!E) return '';
+    const W = 336, H = 112, pad = 10, N = 140;
+    const ys = Array.from({ length: N + 1 }, (_, k) => E.f((k / N) * E.span));
+    const lo = Math.min(0, ...ys), hi = Math.max(1, ...ys);
+    const X = (k) => pad + ((W - 2 * pad) * k) / N, Y = (y) => H - pad - ((H - 2 * pad) * (y - lo)) / (hi - lo);
+    const d = ys.map((y, k) => `${k ? 'L' : 'M'}${X(k).toFixed(1)},${Y(y).toFixed(1)}`).join('');
+    return `<svg class="insp__plot" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="${pad}" x2="${W - pad}" y1="${Y(1)}" y2="${Y(1)}" style="stroke:var(--line-strong)"/>
+      <line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" style="stroke:var(--line-strong)"/>
+      <path d="${d}" fill="none" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+  /* ═══ inspector: one view per thing selected on the left — scene → layer → animation ═══
+     Its header is the Flow card's (title · chip); values read like ProtoPie's, the label
+     beside the value and the value in the accent, grouped Values · Timing · Easing.    */
+  let view = 'scene';                                           // 'scene' | 'layer' | 'track'
+  const nn = (n) => String(n).padStart(2, '0');
+  const kv = (items) => `<dl class="kv">${items.filter(Boolean).map(([k, val, wide]) => `<div${wide ? ' class="wide"' : ''}><dt>${k}</dt><dd>${val}</dd></div>`).join('')}</dl>`;
+  const sec = (title, inner, count) => `<section class="isec"><p class="isec__h">${title}${count != null ? `<span class="count">${count}</span>` : ''}</p>${inner}</section>`;
+  // the same header the Flow card uses: title, then an optional chip
+  const head = (title, chip = '') => `<header class="card__head"><h3 class="card__title">${title}</h3>${chip}</header>`;
+  // ProtoPie-style easing: FUNCTION(Arg value, …) — the function in violet, the numbers in the accent
+  const xfn = (name, args = []) => `<span class="x"><span class="x-fn">${name}</span>${args.length ? `(${args.map(([k, val]) => `${k ? `${k} ` : ''}<span class="x-n">${val}</span>`).join(', ')})` : ''}</span>`;
+  const CURVE_X = { lin: 'LINEAR', out: 'EASE-OUT', io: 'EASE-IN-OUT' };
+  function exprOf(r) {
+    const e = r.ease;
+    if (e.kind === 'spring') { const s = SPR[e.k]; return xfn('SPRING', [['Tension', (s.w * s.w).toFixed(2)], ['Friction', (2 * s.z * s.w).toFixed(2)]]); }
+    if (e.kind === 'curve') return CURVE_X[e.k] ? xfn(CURVE_X[e.k]) : xfn('CURVE', [['', CURVE[e.k].name.replace(/\s*\(.*\)$/, '')]]);
+    if (e.kind === 'custom') return xfn('CUSTOM', [['', e.tag || e.label]]);
+    if (e.kind === 'haptic') return xfn('HAPTIC', [['', `${e.style}${e.intensity ? ` @${e.intensity}` : ''}`]]);
+    return '';
+  }
+  // the value at the playhead, for numeric from → to (same unit); null when it isn't a number
+  const numUnit = (t) => { const m = String(t).replace(/−/g, '-').trim().match(/^(-?\d*\.?\d+)\s*(px|%|deg|ms|s)?$/); return m ? [+m[1], m[2] || ''] : null; };
+  function currentOf(x, T) {
+    const a = numUnit(x.from), b = numUnit(x.to), E = easeFn(x); if (!a || !b || a[1] !== b[1] || !E) return null;
+    let u = (T - x.delay) / x.dur; u = x.repeat && u > 1 ? u % 1 : Math.min(1, Math.max(0, u));
+    if (u >= 1 && !x.repeat) return x.to.replace(/−/g, '-');
+    const pr = u <= 0 ? 0 : E.f(u * E.span);
+    return `${(Math.round((a[0] + (b[0] - a[0]) * pr) * 10) / 10).toString().replace(/^-0$/, '0')}${a[1]}`;
+  }
+  const live = (i, k = 0) => `<span class="live" data-live="${i}" data-part="${k}">—</span>`;
+  function fillLive() {
+    const T = Math.max(0, lastShown);
+    document.querySelectorAll('#insp [data-live]').forEach((el) => { const r = rows[+el.dataset.live]; if (!r) return;
+      const x = (r.parts || [r])[+el.dataset.part]; el.textContent = currentOf(x, T) ?? '—'; });
+  }
+  function easeOf(r) {                                          // → { name, tag, items, code }
+    const e = r.ease;
+    if (e.kind === 'spring') {
+      const s = SPR[e.k], st = springStats(e);
+      return { name: exprOf(r), tag: s.name, code: '',
+        items: [['Overshoot', st.overshoot < 0.05 ? 'none' : st.overshoot.toFixed(1) + '%'],
+          ['Settles', fmtMs(st.settle)], ['ω · ζ', `${s.w} rad/s · ${s.z}`, true], e.v0 && ['Initial velocity', `${e.v0} px/s`, true]] };
+    }
+    if (e.kind === 'curve') return { name: exprOf(r), tag: CURVE[e.k].name, items: [], code: CURVE[e.k].fn };
+    if (e.kind === 'custom') return { name: exprOf(r), tag: e.label, items: (e.info || []).map(([k, val]) => [k, val]), code: e.code || '' };
+    if (e.kind === 'haptic') return { name: exprOf(r), tag: '',
+      items: [['iOS', e.gen, true], ['Android', `vibrate(${e.vibe})`, true], ['iOS Safari', `native switch toggle${e.name === 'success' ? ' ×2' : ''}`, true],
+        r.marks.length > 1 && ['Pulses', `${r.marks.map((m) => Math.round(m)).join(', ')} ms`, true]],
+      code: `${e.call} → webkit.messageHandlers.haptic.postMessage(${JSON.stringify(e.intensity ? { type: e.style, intensity: e.intensity } : e.style)})` };
+    return { name: '', items: [], code: '' };
+  }
+  const easeSec = (r, title) => { const b = easeOf(r), items = b.items.filter(Boolean);
+    return sec(`${title || (r.ease.kind === 'haptic' ? 'Feedback' : 'Easing')}${b.tag ? `<span class="tag">${b.tag}</span>` : ''}`,
+      `${b.name ? `<p class="isec__name">${b.name}</p>` : ''}${plot(r)}${items.length ? kv(items) : ''}${b.code ? `<code class="insp__code">${b.code}</code>` : ''}`); };
+  const list = (items) => `<ol class="anims">${items.join('')}</ol>`;
+  function clearRowSel() { document.querySelectorAll('.row').forEach((el) => el.setAttribute('aria-selected', 'false')); }
+
+  // scene view — what is selected when a scene is picked in the Flow list
+  function showScene() {
+    view = 'scene'; layerView = null; selected = -1; clearRowSel();
+    const S0 = SCENES[sc], len = fmtS(sceneEnd(rows));
+    if (S0.overview) {
+      const scs = rows.filter((r) => r.scene != null);
+      $('insp').innerHTML = `${head(S0.name)}
+        ${sec('Summary', kv([['Length', len], ['Scenes', scs.length]]))}
+        ${sec('Scenes', list(scs.map((r) => `<li><button data-go="${r.scene}"><span class="n">${nn(r.scene)}</span><span class="anims__main"><b>${r.layer}</b></span><span class="anims__t">${fmtS(r.dur)}</span></button></li>`)), scs.length)}`;
+    } else {
+      const ls = layersOf(rows), n = rows.filter((r) => !r.grp).length;
+      $('insp').innerHTML = `${head(S0.name, S0.varies ? '<span class="tag tag--warm">varies</span>' : '')}
+        ${sec('Summary', kv([['Length', len], ['Layers', ls.length], ['Animations', n]]))}
+        ${sec('Layers', list(ls.map(([l, e]) => `<li><button data-l="${esc(l)}">${LAYER_ICO}<span class="anims__main"><b>${l}</b></span><span class="anims__t">${e.n}</span></button></li>`)), ls.length)}`;
+    }
+    highlight(null); renderFlow();
+  }
+
+  // animation view — a timeline row
+  function select(i) {
+    if (i < 0 || !rows[i] || rows[i].grp) return;
+    selected = i; layerView = null; view = 'track';
+    document.querySelectorAll('.row').forEach((el) => el.setAttribute('aria-selected', String(+el.dataset.i === i)));
+    const r = rows[i];
+    if (r.scene != null) {                                      // a scene, on the Overview timeline
+      const sr = SCENES[r.scene].rows(v).filter((x) => !x.grp);
+      $('insp').innerHTML = `${head(`${nn(r.scene)} ${r.layer}`)}
+        ${sec('Summary', kv([['Starts', fmtMs(r.delay)], ['Length', fmtMs(r.dur)], ['Animations', sr.length], ['Layers', [...new Set(sr.map((x) => x.layer))].join(', '), true]]))}
+        <button class="insp__go" data-go="${r.scene}">Open scene ${nn(r.scene)} →</button>`;
+      highlight(null); renderFlow(); return;
+    }
+    const parts = r.parts || [r], same = parts.every((x) => JSON.stringify(x.ease) === JSON.stringify(parts[0].ease));
+    const values = r.parts ? kv(parts.flatMap((x, k) => [[x.prop, `${x.from} → ${x.to}`, true], [`${x.prop} now`, live(i, k), true]])) : kv([['From', r.from], ['To', r.to], ['Current', live(i)]]);
+    const timing = kv([['Delay', `${r.approx ? '≈ ' : ''}${fmtMs(r.delay)}`], ['Duration', `${fmtMs(r.dur)}${r.repeat ? ' · repeats' : ''}`],
+      ['Ends', `${r.approx ? '≈ ' : ''}${fmtMs(rowEnd(r))}`], r.stagger && ['Stagger', `×${r.stagger.n} · ${r.stagger.step}ms · ${r.stagger.order}`, true]]);
+    $('insp').innerHTML = `${head(`${r.prop}<small>${r.layer}</small>`)}
+      ${r.from === '—' ? '' : sec('Values', values)}
+      ${sec('Timing', timing)}
+      ${same ? easeSec(parts[0]) : parts.map((x) => easeSec(x, `Easing · ${x.prop}`)).join('')}`;
+    fillLive(); highlight(r.sel); renderFlow();
+  }
+
+  /* ═══ layer view: what ProtoPie shows for a selected layer, measured live ═══
+     Geometry is read off the prototype on screen at the playhead (device points,
+     the screen is 375pt wide), so it follows the animation as you scrub.     */
+  let layerView = null, propsAt = -1;
+  const num = (n) => (Math.round(n * 10) / 10).toString().replace(/^-0$/, '0');
+  function layerSel(name) { const e = layersOf(rows).find(([l]) => l === name); return e ? [...e[1].sels].join(', ') : ''; }
+  function measure(name) {
+    const D = disp(); if (!D) return null;
+    let els = []; try { els = [...D.d.querySelectorAll(layerSel(name))]; } catch (_) {}
+    const el = els.find((x) => x.getBoundingClientRect().width > 0) || els[0];
+    if (!el) return { count: 0 };
+    const b = el.getBoundingClientRect(), cs = D.d.defaultView.getComputedStyle(el);
+    const rad = cs.borderTopLeftRadius;
+    return { count: els.length, x: b.left, y: b.top, w: b.width, h: b.height, o: +cs.opacity, r: rad.endsWith('%') ? rad : num(parseFloat(rad) || 0) };
+  }
+  function fillProps() {
+    const box = $('layerProps'); if (!box || !layerView) return;
+    const m = measure(layerView), shown = Math.max(0, lastShown);
+    const cell = (k, val) => `<div><dt>${k}</dt><dd>${val}</dd></div>`;
+    if (!m) { box.innerHTML = cell('X', '…') + cell('Y', '…') + cell('Width', '…') + cell('Height', '…') + cell('Opacity', '…') + cell('Radius', '…'); $('layerAt').textContent = 'Loading…'; return; }
+    if (!m.count) { box.innerHTML = ''; $('layerAt').textContent = `Not on screen at ${fmtS(shown)}`; return; }
+    box.innerHTML = cell('X', num(m.x)) + cell('Y', num(m.y)) + cell('Width', num(m.w)) + cell('Height', num(m.h)) + cell('Opacity', `${num(m.o * 100)}%`) + cell('Radius', m.r);
+    $('layerAt').textContent = `At ${fmtS(shown)} on the playhead · pt${m.count > 1 ? ` · first of ${m.count} elements` : ''}`;
+  }
+  function showLayer(name) {
+    layerFilter = name; layerView = name; view = 'layer'; selected = -1; propsAt = -1; clearRowSel();
+    applyFilter();
+    $('insp').innerHTML = `${head(name, '<span class="tag">Layer</span>')}
+      ${sec('Layer properties', `<dl class="kv" id="layerProps"></dl><p class="insp__cap" id="layerAt"></p>`)}`;
+    fillProps(); fillLive(); highlight(layerSel(name)); renderFlow();
+  }
+
+  /* ═══ live preview — the real prototype on a virtual clock ═══════════════
+     Each preview frame gets its own clock: performance.now, rAF, setTimeout and
+     every animation in it (WAAPI and CSS) run off virtual time, stepped one
+     60fps frame at a time with timers and animation ends fired in order. So the
+     scene can play at any speed, pause on an exact millisecond, and jump
+     forward instantly — that is what makes the playhead draggable. Dragging
+     back swaps in a standby frame (already set up just before the trigger)
+     and fast-forwards it; a fresh standby is prepared behind it. app.js is
+     never modified — the frame is only driven from here.                   */
+  const phone = $('phone');
+  const mc = new MessageChannel(); let mq = [];
+  mc.port1.onmessage = () => { const q = mq; mq = []; q.forEach((f) => f()); };
+  const flush = () => new Promise((r) => { mq.push(r); mc.port2.postMessage(0); });   // one task: the frame's microtasks drain
+  const realWait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const FR = 1000 / 60;
+  function installEngine(w) {
+    const d = w.document;
+    let vt = w.performance.now(), fixed = null;
+    const now = () => (fixed ?? vt);
+    w.performance.now = now;
+    // a private history per frame: pushes become replaceState on the real one, so frames never share
+    // the page's joint session history, and popstate is dispatched on the virtual clock
+    const H = w.history, rRep = H.replaceState.bind(H), abs = (u) => (u != null ? new URL(u, w.location.href).href : w.location.href);
+    const stack = [{ state: H.state, url: w.location.href }]; let hi = 0;
+    H.pushState = (st, _t, u) => { stack.length = hi + 1; stack.push({ state: st, url: abs(u) }); hi++; rRep(st, '', abs(u)); };
+    H.replaceState = (st, _t, u) => { stack[hi] = { state: st, url: abs(u) }; rRep(st, '', abs(u)); };
+    const go = (n) => { const j = Math.max(0, Math.min(stack.length - 1, hi + n)); if (j === hi) return; hi = j; rRep(stack[hi].state, '', stack[hi].url);
+      w.setTimeout(() => w.dispatchEvent(new w.PopStateEvent('popstate', { state: stack[hi].state })), 0); };
+    H.back = () => go(-1); H.forward = () => go(1); H.go = (n = 0) => go(n);
+    let tid = 1; const timers = new Map();
+    w.setTimeout = (fn, ms = 0, ...args) => { const id = tid++; if (typeof fn === 'function') timers.set(id, { at: now() + Math.max(0, +ms || 0), fn, args, seq: id }); return id; };
+    w.clearTimeout = (id) => { timers.delete(id); };
+    let rq = [], rid = 1;
+    w.requestAnimationFrame = (cb) => { const id = rid++; rq.push({ id, cb }); return id; };
+    w.cancelAnimationFrame = (id) => { rq = rq.filter((r) => r.id !== id); };
+    const anims = new Map();                                   // Animation → { v0, end }
+    const track = (an, v0) => { try { an.pause(); } catch (_) {} anims.set(an, { v0, end: an.effect ? an.effect.getComputedTiming().endTime : Infinity }); };
+    const rAn = w.Element.prototype.animate;
+    w.Element.prototype.animate = function (...a) { const an = rAn.apply(this, a); track(an, now()); an.currentTime = 0; return an; };
+    const adopt = () => { for (const an of d.getAnimations()) if (!anims.has(an) && an.playState !== 'idle' && an.playState !== 'finished') track(an, now() - (an.currentTime || 0)); };
+    function sync(t, finishOnly = false) {
+      for (const [an, m] of anims) {
+        if (an.playState === 'idle') { anims.delete(an); continue; }
+        const ct = t - m.v0;
+        if (ct >= m.end) { anims.delete(an); try { an.finish(); } catch (_) {} }
+        else if (!finishOnly) an.currentTime = Math.max(0, ct);
+      }
+    }
+    function nextTimer(lim) { let best = null; for (const [id, t] of timers) if (t.at <= lim && (!best || t.at < best.at || (t.at === best.at && t.seq < best.seq))) best = { id, ...t }; return best; }
+    function nextEnd(lim) { let best = Infinity; for (const [an, m] of anims) { if (an.playState === 'idle') continue; const e = m.v0 + m.end; if (e <= lim && e < best) best = e; } return best === Infinity ? null : best; }
+    let lock = Promise.resolve();
+    function advanceTo(T, fr = FR) {
+      const run = async () => {
+        while (vt < T - 1e-6) {
+          const next = Math.min(T, vt + fr);
+          for (let g = 0; g < 400; g++) {                       // timers + animation ends inside this frame, in order
+            const tm = nextTimer(next), ae = nextEnd(next);
+            if (!tm && ae == null) break;
+            if (ae != null && (!tm || ae <= tm.at)) { fixed = Math.max(vt, ae); sync(fixed, true); }
+            else { timers.delete(tm.id); fixed = Math.max(vt, tm.at); try { tm.fn(...tm.args); } catch (e) { console.warn('[preview]', e); } }
+            await flush();
+          }
+          vt = next; fixed = null;
+          adopt(); sync(vt);
+          const q = rq; rq = [];
+          for (const r of q) { try { r.cb(vt); } catch (e) { console.warn('[preview]', e); } }
+          await flush();
+        }
+      };
+      return (lock = lock.then(run, run));
+    }
+    // set-up runs on coarser 48ms frames: springs are evaluated in closed form, so only the end state matters
+    async function stepUntil(cond, max = 12000) { const lim = vt + max; while (!cond()) { if (vt >= lim) throw new Error('timeout'); await advanceTo(vt + 96 * 3, 96); } }
+    return { now, advanceTo, stepUntil, get vt() { return vt; } };
+  }
+  /* ═══ record once, scrub instantly ══════════════════════════════════════════
+     A hidden RECORDER frame (the real prototype on the virtual clock above) plays
+     the scene once, frame by frame (120fps, 60fps for the long overview). Every
+     visual change is logged per element: style / class / hidden attributes,
+     every running animation's computed values (WAAPI, CSS animations incl.
+     ::after, transitions), structural changes, input values and scroll offsets.
+     The visible DISPLAY frame is a static, script-free copy of the recorder's
+     page taken just before the trigger; showing time T = applying each log's
+     value at T. So the screen follows the playhead within the same frame,
+     forwards or backwards, at any speed — playback and scrubbing are one
+     lookup. Recording runs faster than real time, time-sliced so the UI stays
+     smooth; a plain "Loading…" covers the phone until it is done.              */
+  let gen = 0, mode = 'idle', REC = null, playT = 0, headT = null, lastShown = -1, stateCur = '', stateEnd = '';
+  let hlBox = null, hlSel = null, hlAt = -1;
+  const disp = () => (REC && REC.disp ? REC.disp : null);
+  function highlight(sel) {
+    hlSel = sel; const D = disp(); if (!D) return; const d = D.d;
+    if (!hlBox || !hlBox.isConnected) { hlBox = d.createElement('div'); hlBox.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647'; d.body.appendChild(hlBox); }
+    if (!sel) { hlBox.innerHTML = ''; return; }
+    const els = [...d.querySelectorAll(sel)].slice(0, 12);
+    hlBox.innerHTML = els.map((el) => { const b = el.getBoundingClientRect(); if (!b.width || b.bottom < 0 || b.top > DH) return '';
+      if (el.checkVisibility && !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return '';
+      return `<i style="position:fixed;left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${Math.max(2, b.height)}px;outline:1.5px solid #277fff;outline-offset:1px;border-radius:2px"></i>`; }).join('');
+  }
+  async function makeFrame() {
+    const scene = sc;
+    const f = document.createElement('iframe'); f.title = 'Recorder'; f.tabIndex = -1; f.setAttribute('aria-hidden', 'true');
+    f.src = PATHS[v] + '?spec=' + Date.now();
+    phone.insertBefore(f, $('veil'));
+    await new Promise((r) => f.addEventListener('load', r, { once: true }));
+    const w = f.contentWindow, eng = installEngine(w);
+    await w.document.fonts.ready;
+    await eng.advanceTo(eng.vt + 100, 48);
+    if (PREP[scene]) await ST[PREP[scene]](w.document, w, eng);
+    return { f, w, eng };
+  }
+  const kebab = (p) => (p === 'cssFloat' ? 'float' : p.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase()));
+  const SKIP = new Set(['offset', 'computedOffset', 'easing', 'composite']);
+  function at(arr, T) { let lo = 0, hi = arr.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m][0] <= T) { k = m; lo = m + 1; } else hi = m - 1; } return k < 0 ? arr[0][1] : arr[k][1]; }
+  function push(arr, t, val) { const l = arr[arr.length - 1]; if (l[1] === val) return; if (l[0] === t) l[1] = val; else arr.push([t, val]); }
+  const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+  async function record(g) {
+    const fr = await makeFrame();
+    if (g !== gen) { fr.f.remove(); return; }
+    const { w, eng } = fr, d = w.document;
+    // key every element, then take the static copy the display is built from
+    let K = 0; for (const el of d.querySelectorAll('*')) el.setAttribute('data-sk', K++);
+    d.head.querySelectorAll('link[rel~="stylesheet"], style').forEach((s) => s.setAttribute('data-spec-css', ''));   // in the copy already
+    const clone = d.documentElement.cloneNode(true);
+    clone.querySelectorAll('script').forEach((s) => s.remove());
+    const head = clone.querySelector('head');
+    const base = d.createElement('base'); base.href = location.origin + PATHS[v]; head.prepend(base);
+    const freeze = d.createElement('style'); freeze.textContent = '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}'; head.append(freeze);
+    const ovs = d.createElement('style'); ovs.id = '__specov'; head.append(ovs);
+    const html = '<!doctype html>' + clone.outerHTML;
+    const pristine = new DOMParser().parseFromString(html, 'text/html');
+    // display frame
+    const df = document.createElement('iframe'); df.title = 'Prototype preview'; df.srcdoc = html;
+    phone.insertBefore(df, $('veil'));
+    await new Promise((r) => df.addEventListener('load', r, { once: true }));
+    if (g !== gen) { fr.f.remove(); df.remove(); return; }
+    const dd = df.contentDocument;
+    await Promise.race([Promise.all([dd.fonts.ready, ...[...dd.images].map((im) => (im.decode ? im.decode().catch(() => {}) : 0))]), realWait(1500)]);
+    // logs, keyed by element
+    const logs = new Map();
+    const R = (sk) => { let r = logs.get(sk); if (!r) logs.set(sk, (r = { ov: new Map(), ps: new Map() })); return r; };
+    const rec = { g, logs, upTo: -1, done: false, disp: { f: df, d: dd, map: new Map(), ov: dd.getElementById('__specov'), css: '' } };
+    // initial input values + scroll offsets
+    const inputs = [...d.querySelectorAll('input, textarea')];
+    const scrollers = [...d.querySelectorAll('*')].filter((el) => { const cs = w.getComputedStyle(el); return /(auto|scroll)/.test(cs.overflowY + cs.overflowX); });
+    inputs.forEach((el) => { R(el.dataset.sk).val = [[-1, el.value]]; });
+    scrollers.forEach((el) => { R(el.dataset.sk).sc = [[-1, `${el.scrollTop},${el.scrollLeft}`]]; });
+    let moBuf = [];
+    const mo = new w.MutationObserver((list) => { moBuf.push(...list); });   // records delivered between captures must not be lost
+    // attributes the replay follows: style / class / hidden, plus the ones apps animate or swap directly —
+    // SVG path / shape geometry (a rAF morph of `d`), and image / video sources (a picked skin, a poster)
+    const XATTR = ['d', 'points', 'transform', 'src', 'srcset', 'poster', 'href', 'opacity', 'fill', 'stroke-dashoffset', 'disabled', 'aria-pressed', 'aria-hidden'];   // + state attributes CSS styles on
+    mo.observe(d, { subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden', ...XATTR], attributeOldValue: true, childList: true, characterData: true });
+    const propCache = new WeakMap(), active = new Set();
+    function capture(t) {
+      // attributes + structure
+      const dirty = new Set();
+      const muts = moBuf.concat(mo.takeRecords()); moBuf = [];
+      for (const m of muts) {
+        if (m.type === 'attributes') {
+          const el = m.target; if (el === hlBox) continue;
+          let sk = el.getAttribute('data-sk'); if (sk == null) { el.setAttribute('data-sk', sk = String(K++)); }
+          const r = R(sk), an = m.attributeName;
+          if (an !== 'style' && an !== 'class' && an !== 'hidden') {            // the extra attributes
+            const ax = (r.ax ||= new Map()); let arr = ax.get(an); if (!arr) ax.set(an, (arr = [[-1, m.oldValue]]));
+            push(arr, t, el.getAttribute(an)); continue;
+          }
+          const key = an === 'style' ? 'st' : an === 'class' ? 'cl' : 'hd';
+          if (!r[key]) r[key] = [[-1, m.oldValue]];
+          push(r[key], t, el.getAttribute(m.attributeName));
+        } else {
+          const p = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+          if (p) dirty.add(p);
+        }
+      }
+      // <head> is never replayed as innerHTML: that would drop the display's own <base>, freeze style and override
+      // sheet (relative URLs and every animated value break). Stylesheets the app adds mid-scene (lazy CSS chunks)
+      // are copied into the display's head once instead — CSS only adds rules, so adding them early is harmless.
+      if ([...dirty].some((p) => p === d.head || d.head.contains(p))) {
+        const dh = rec.disp.d.head, css = (rec.disp.css2 ||= new Map());
+        for (const s of d.head.querySelectorAll('link[rel~="stylesheet"], style')) {
+          const had = css.get(s);
+          if (had) { if (s.tagName === 'STYLE' && had.textContent !== s.textContent) had.textContent = s.textContent; continue; }
+          if (s.hasAttribute('data-spec-css')) continue;                         // already in the copy taken at Start
+          const c = rec.disp.d.importNode(s, true); c.removeAttribute('data-sk');
+          if (c.tagName === 'LINK') c.setAttribute('href', s.href);            // absolute, whatever the display's base
+          dh.insertBefore(c, rec.disp.ov); css.set(s, c);                        // before the override sheet, which must win
+        }
+        for (const p of [...dirty]) if (p === d.head || d.head.contains(p)) dirty.delete(p);
+      }
+      for (const p of dirty) {
+        let a = p.parentElement, covered = false; while (a) { if (dirty.has(a)) { covered = true; break; } a = a.parentElement; }
+        if (covered || !p.isConnected) continue;
+        for (const el of p.querySelectorAll('*')) if (!el.hasAttribute('data-sk')) el.setAttribute('data-sk', String(K++));
+        let sk = p.getAttribute('data-sk'); if (sk == null) continue;
+        const r = R(sk); if (!r.x) { const o = pristine.querySelector(`[data-sk="${sk}"]`); r.x = [[-1, o ? o.innerHTML : '']]; }
+        push(r.x, t, p.innerHTML);
+      }
+      // animated values (computed), incl. pseudo-elements
+      const seen = new Set();
+      for (const an of d.getAnimations()) {
+        const ef = an.effect; if (!ef || !ef.target) continue;
+        const tgt = ef.target, sk = tgt.getAttribute('data-sk'); if (sk == null) continue;
+        let props = propCache.get(an);
+        if (!props) { const s = new Set(); try { for (const kf of ef.getKeyframes()) for (const p in kf) if (!SKIP.has(p)) s.add(kebab(p)); } catch (_) {} if (an.transitionProperty) s.add(an.transitionProperty); propCache.set(an, (props = [...s])); }
+        const pseudo = ef.pseudoElement || '', cs = w.getComputedStyle(tgt, pseudo || null), r = R(sk), map = pseudo ? r.ps : r.ov;
+        for (const p of props) {
+          const key = pseudo ? `${pseudo}|${p}` : p, id = `${sk}#${key}`;
+          let arr = map.get(key); if (!arr) map.set(key, (arr = [[-1, null]]));
+          push(arr, t, cs.getPropertyValue(p)); seen.add(id); active.add(id);
+        }
+      }
+      for (const id of active) if (!seen.has(id)) { active.delete(id); const [sk, key] = id.split('#'); const r = logs.get(sk); const arr = (key.includes('|') ? r.ps : r.ov).get(key); push(arr, t, null); }
+      // inputs the app creates after Start (a search page pushed mid-scene) get their value logged too
+      for (const el of d.querySelectorAll('input, textarea')) if (!inputs.includes(el)) {
+        let sk = el.getAttribute('data-sk'); if (sk == null) el.setAttribute('data-sk', (sk = String(K++)));
+        const r = R(sk); if (!r.val) r.val = [[-1, el.getAttribute('value') || '']]; inputs.push(el);
+      }
+      inputs.forEach((el) => push(logs.get(el.dataset.sk).val, t, el.value));
+      scrollers.forEach((el) => push(logs.get(el.dataset.sk).sc, t, `${el.scrollTop},${el.scrollLeft}`));
+      rec.upTo = t;
+    }
+    // media: the display copy is script-free, so its <video>s are driven from the playhead (SPEC.media)
+    rec.media = (typeof window.SPEC.media === 'function' ? window.SPEC.media(sc, v) || [] : []).map((m) => {
+      const el = dd.querySelector(m.sel); if (!el) return null;
+      el.removeAttribute('autoplay'); el.muted = true; el.playsInline = true; el.loop = !!m.loop; el.preload = 'auto';
+      el.src = m.src; el.load(); return { ...m, el, on: null };
+    }).filter(Boolean);
+    REC = rec; hlBox = null; lastShown = -1;
+    df.classList.add('is-front');
+    [...phone.querySelectorAll('iframe.is-front')].forEach((f) => { if (f !== df) f.remove(); });
+    // fire the trigger at Start and record
+    capture(0);
+    const t0 = eng.now();
+    if (SCENES[sc].overview) beats.forEach((bt) => w.setTimeout(() => { try { bt.fire(d, w); } catch (_) {} }, bt.at));
+    else await FIRE[sc](d, w);
+    await flush();
+    const dt = END > 6000 ? 1000 / 60 : 1000 / 120;
+    let slice = performance.now();
+    for (let t = dt; t <= END + dt / 2 && g === gen; t += dt) {
+      await eng.advanceTo(t0 + t, dt);
+      capture(Math.min(t, END));
+      if (performance.now() - slice > 10) { await nextFrame(); slice = performance.now(); }   // keep the page responsive
+    }
+    mo.disconnect();
+    if (g === gen) { rec.upTo = END; rec.done = true; $('veil').hidden = true; if (mode === 'idle') setMode('playing'); }   // ready: lift the veil and play from 0
+    fr.f.remove();                                              // the recording is all the display needs
+  }
+
+  // show time T on the display: each element's logged state at T
+  function applyAt(T) {
+    const D = disp(); if (!D) return;
+    const d = D.d, map = D.map, logs = REC.logs;
+    const elOf = (sk) => { let el = map.get(sk); if (!el || !el.isConnected) { el = d.querySelector(`[data-sk="${sk}"]`); if (el) map.set(sk, el); } return el; };
+    let restruct = false;
+    for (const [sk, r] of logs) if (r.x) { const val = at(r.x, T); if (r.xa !== val) { const el = elOf(sk); if (el) { el.innerHTML = val; restruct = true; } r.xa = val; } }
+    if (restruct) { map.clear(); hlBox = null; for (const r of logs.values()) { r.sa = r.ca = r.ha = r.va = r.sca = undefined; if (r.axs) r.axs.clear(); } }
+    let css = '';
+    for (const [sk, r] of logs) {
+      const el = elOf(sk); if (!el) continue;
+      if (r.st || r.ov.size) {
+        if (r.st0 === undefined) r.st0 = el.getAttribute('style') || '';
+        let s = r.st ? at(r.st, T) || '' : r.st0;
+        for (const [p, arr] of r.ov) { const val = at(arr, T); if (val) s += `;${p}:${val}`; }
+        if (s !== r.sa) { if (s) el.setAttribute('style', s); else el.removeAttribute('style'); r.sa = s; }
+      }
+      if (r.cl) { const c = at(r.cl, T); if (c !== r.ca) { if (c == null) el.removeAttribute('class'); else el.setAttribute('class', c); r.ca = c; } }
+      if (r.hd) { const h = at(r.hd, T); if (h !== r.ha) { if (h == null) el.removeAttribute('hidden'); else el.setAttribute('hidden', h); r.ha = h; } }
+      if (r.ax) { const xs = (r.axs ||= new Map()); for (const [an, arr] of r.ax) { const x = at(arr, T); if (x !== xs.get(an)) { if (x == null) el.removeAttribute(an); else el.setAttribute(an, x); xs.set(an, x); } } }
+      if (r.val) { const x = at(r.val, T); if (x !== r.va) { el.value = x; r.va = x; } }
+      if (r.sc) { const x = at(r.sc, T); if (x !== r.sca) { const [top, left] = x.split(','); el.scrollTop = +top; el.scrollLeft = +left; r.sca = x; } }
+      for (const [key, arr] of r.ps) { const val = at(arr, T); if (val) { const [ps, p] = key.split('|'); css += `[data-sk="${sk}"]${ps}{${p}:${val}!important}`; } }
+    }
+    if (css !== D.css) { D.ov.textContent = css; D.css = css; }
+  }
+
+  function setMode(m) {
+    mode = m;
+    $('playIco').innerHTML = m === 'playing' ? '<rect x="2" y="1.5" width="4" height="15" rx="1" fill="currentColor"/><rect x="10" y="1.5" width="4" height="15" rx="1" fill="currentColor"/>' : '<path d="M1 1.5v15L15 9z" fill="currentColor"/>';
+    $('play').setAttribute('aria-label', m === 'playing' ? 'Pause' : 'Play');
+  }
+  function paint() {
+    const T = headT ?? playT, up = REC ? (REC.done ? END : Math.max(0, REC.upTo)) : 0;
+    const shown = Math.min(T, up);
+    if (shown !== lastShown) { const c0 = performance.now(); applyAt(shown); if (window.__spec) (window.__spec.cost ||= []).push(performance.now() - c0); lastShown = shown; hlAt = -1; }
+    if (REC && REC.media && REC.media.length) syncMedia(shown, shown === T);
+    setHead(T);
+    // fixed-width readout: always two decimals, in a slot as wide as the total, so the bar never resizes
+    const cur = `${(Math.min(T, END) / 1000).toFixed(2)}s`, end = `${(END / 1000).toFixed(2)}s`;
+    if (cur !== stateCur) { $('stateCur').textContent = cur; stateCur = cur; }
+    if (end !== stateEnd) { $('stateEnd').textContent = end; $('stateCur').style.minWidth = `${end.length}ch`; stateEnd = end; }
+    if (hlSel && hlAt !== shown) { highlight(hlSel); hlAt = shown; }
+    if (propsAt !== shown) { if (layerView) fillProps(); fillLive(); propsAt = shown; }
+  }
+  /* media sync — each SPEC.media entry { sel, src, at, from?, loop?, until?, cls? }: the video's own time is
+     (T − at) / 1000 + from. While the scene plays it runs natively at the playback speed (re-synced only
+     if it drifts > 120 ms); paused or scrubbing it is seeked to the exact frame. Before `at` it waits on
+     its first frame; `cls` is set on the element while it's active (e.g. the class that shows it). */
+  function syncMedia(T, live) {
+    for (const m of REC.media) {
+      const el = m.el, from = m.from || 0, D = el.duration && isFinite(el.duration) ? el.duration : 0;
+      const active = T >= m.at && (m.until == null || T < m.until);
+      if (m.cls && active !== m.on) { el.classList.toggle(m.cls, active); m.on = active; }
+      if (!active) { if (!el.paused) el.pause(); if (el.readyState > 0 && Math.abs(el.currentTime - from) > 0.04) el.currentTime = from; continue; }
+      let mt = (T - m.at) / 1000 + from;
+      if (D) mt = m.loop ? mt % D : Math.min(mt, D - 0.001);
+      const run = mode === 'playing' && headT == null && live && !(D && !m.loop && mt >= D - 0.02);
+      if (run) {
+        el.playbackRate = SPEEDS[speedIdx];
+        const off = Math.abs(el.currentTime - mt), wrap = m.loop && D && Math.abs(off - D) < 0.12;
+        if (el.paused) { el.currentTime = mt; el.play().catch(() => {}); }
+        else if (off > 0.12 && !wrap) el.currentTime = mt;
+      } else {
+        if (!el.paused) el.pause();
+        if (el.readyState > 0 && Math.abs(el.currentTime - mt) > 0.02) el.currentTime = mt;
+      }
+    }
+  }
+  let lastTs = performance.now();
+  function loop(ts) {
+    const dt = Math.min(64, ts - lastTs); lastTs = ts;
+    if (mode === 'playing' && REC) {
+      const up = REC.done ? END : Math.max(0, REC.upTo);
+      playT = Math.min(playT + dt * SPEEDS[speedIdx], END);
+      if (playT > up) playT = up;                               // never run ahead of the recording
+      if (playT >= END) { playT = END; setMode('done'); }
+    }
+    if (REC) paint();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  // ?debug: a hook for automated checks (a separate live frame driven to the same instant)
+  if (qs.has('debug')) window.__spec = { async truth(T) { const fr = await makeFrame(); const t0 = fr.eng.now();
+    if (SCENES[sc].overview) beats.forEach((bt) => fr.w.setTimeout(() => bt.fire(fr.w.document, fr.w), bt.at)); else await FIRE[sc](fr.w.document, fr.w);
+    await flush(); const dt = END > 6000 ? 1000 / 60 : 1000 / 120; for (let t = dt; t <= T + 1e-6; t += dt) await fr.eng.advanceTo(t0 + t, dt); return fr.f; }, get ready() { return !!(REC && REC.done); }, get REC() { return REC; } };
+  async function rebuild() {                                    // scene or iteration changed: record it
+    const g = ++gen; setMode('idle'); playT = 0; headT = null; REC = null; lastShown = -1;
+    [...phone.querySelectorAll('iframe:not(.is-front)')].forEach((f) => f.remove());
+    $('veil').hidden = false; $('veil').textContent = 'Loading…';
+    setHead(0);
+    stateCur = '0.00s'; $('stateCur').textContent = stateCur;              // the readout starts at 0 with the new scene
+    stateEnd = `${(END / 1000).toFixed(2)}s`; $('stateEnd').textContent = stateEnd; $('stateCur').style.minWidth = `${stateEnd.length}ch`;
+    try { await record(g); } catch (e) { if (g === gen) { $('veil').hidden = false; $('veil').textContent = 'Preview unavailable — reload to try again.'; } }
+  }
+  function togglePlay() {
+    if (!REC || !REC.done) return;                              // still loading
+    if (mode === 'playing') { setMode('paused'); return; }
+    if (playT >= END - 1) playT = 0;
+    setMode('playing');
+  }
+  /* Scrubbing: press on the pin, the line, the ruler or any track and drag — the display
+     shows that exact moment in the same frame. A press on a track that doesn't move also
+     selects that track.                                                                  */
+  let scrubbing = null, downX = 0, downRow = null;
+  function scrubAt(clientX) {
+    const r = $('lane').getBoundingClientRect();
+    const T = Math.max(0, Math.min(END, ((clientX - r.left) / r.width) * END));
+    if (mode === 'playing' || mode === 'done' || mode === 'idle') setMode('paused');
+    playT = T; headT = null; paint();
+  }
+  const onMove = (e) => { if (e.pointerId === scrubbing) { e.preventDefault(); if (Math.abs(e.clientX - downX) > 2) downRow = null; scrubAt(e.clientX); } };
+  const onUp = (e) => {
+    if (e.pointerId !== scrubbing) return;
+    scrubbing = null; document.body.classList.remove('is-scrubbing');
+    removeEventListener('pointermove', onMove); removeEventListener('pointerup', onUp); removeEventListener('pointercancel', onUp);
+    if (downRow != null) select(downRow);
+  };
+  function startScrub(e, row = null) {
+    if (e.button !== 0 || scrubbing != null) return;
+    e.preventDefault(); scrubbing = e.pointerId; downX = e.clientX; downRow = row;
+    document.body.classList.add('is-scrubbing');
+    addEventListener('pointermove', onMove, { passive: false }); addEventListener('pointerup', onUp); addEventListener('pointercancel', onUp);
+    scrubAt(e.clientX);
+  }
+  for (const el of [$('scale'), $('grip'), $('headLine')]) el.addEventListener('pointerdown', (e) => startScrub(e));
+  $('rows').addEventListener('pointerdown', (e) => { const trk = e.target.closest('.row__trk'); if (trk) startScrub(e, +trk.parentElement.dataset.i); });
+  $('grip').addEventListener('keydown', (e) => { const step = e.shiftKey ? 100 : 1000 / 60;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { e.preventDefault(); setMode('paused');
+      playT = Math.max(0, Math.min(END, playT + (e.key === 'ArrowRight' ? step : -step))); paint(); } });
+
+  function fit() {
+    const st = $('stage'), h = st.clientHeight || 520, s = Math.min(1, h / DH);
+    $('phone').style.transform = `scale(${s})`;
+    st.style.width = `${DW * s}px`; $('phone').style.marginBottom = `${-DH * (1 - s)}px`;
+  }
+  addEventListener('resize', fit);
+
+  /* ═══ wiring ═══════════════════════════════════════════════════════════════ */
+  function setScene(n) { sc = n; layerFilter = ''; history.replaceState(null, '', `?v=${v}&s=${sc}`); renderTimeline(); rebuild(); }
+  // iteration picker (header): every iteration in SPEC.paths; the open scene is re-recorded for the new one
+  const itersEl = $('iters'), iterIds = Object.keys(PATHS).map(Number).sort((a, b) => a - b);
+  const paintIters = () => itersEl.querySelectorAll('button[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.v === v)));
+  if (iterIds.length > 1) {
+    itersEl.innerHTML = '<span class="iters__lab">Iteration</span>' + iterIds.map((n) => `<button type="button" data-v="${n}" aria-pressed="false" title="${esc((ITER && ITER[n]) || `Iteration ${String(n).padStart(2, '0')}`)}">${String(n).padStart(2, '0')}</button>`).join('');
+    itersEl.hidden = false; paintIters();
+  }
+  function setIter(n) { if (!PATHS[n] || n === v) return; v = n; layerFilter = ''; history.replaceState(null, '', `?v=${v}&s=${sc}`); paintIters(); paintAssets(); renderTimeline(); rebuild(); }
+  itersEl.addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (b) setIter(+b.dataset.v); });
+  $('flow').addEventListener('click', (e) => {
+    const l = e.target.closest('button[data-l]'); if (l) { showLayer(l.dataset.l); return; }
+    const b = e.target.closest('button[data-s]'); if (!b) return;
+    if (+b.dataset.s !== sc) { setScene(+b.dataset.s); return; }
+    layerFilter = ''; applyFilter(); showScene();             // back to the whole scene
+  });
+  $('insp').addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) { setScene(+b.dataset.go); return; }
+    const l = e.target.closest('.anims button[data-l]'); if (l) { showLayer(l.dataset.l); return; }
+    const t = e.target.closest('.anims button[data-i]'); if (t) select(+t.dataset.i); });
+  $('rows').addEventListener('click', (e) => { const r = e.target.closest('.row'); if (!r || e.target.closest('.row__trk')) return;
+    if (layerFilter && rows[+r.dataset.i].layer !== layerFilter) { layerFilter = ''; applyFilter(); }
+    select(+r.dataset.i); });
+  $('rows').addEventListener('dblclick', (e) => { const r = e.target.closest('.row'); if (r && rows[+r.dataset.i].scene != null) setScene(rows[+r.dataset.i].scene); });
+  $('rows').addEventListener('keydown', (e) => { const r = e.target.closest('.row'); if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(+r.dataset.i); } });
+  $('rows').addEventListener('mouseover', (e) => { const r = e.target.closest('.row'); if (r) highlight(rows[+r.dataset.i].sel); });
+  $('rows').addEventListener('mouseleave', () => { highlight(view === 'track' && rows[selected] ? rows[selected].sel : view === 'layer' ? layerSel(layerView) : null); });
+  $('play').addEventListener('click', () => togglePlay());
+  $('speed').addEventListener('click', () => { speedIdx = (speedIdx + 1) % SPEEDS.length; $('speedLbl').textContent = `× ${SPEEDS[speedIdx]}`; });
+  // toast — one at a time; a repeat replays its entrance. Stays 3s, and waits while it is hovered.
+  const CHECK = '<svg viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></svg>';
+  let toastT = 0;
+  function toast(msg, icon = CHECK) {
+    clearTimeout(toastT);
+    const el = document.createElement('div'); el.className = 'toast is-enter'; el.innerHTML = `${icon}<span>${msg}</span>`;
+    $('toasts').replaceChildren(el);
+    void el.offsetWidth; el.classList.remove('is-enter');      // commit the start state, then transition (no frame wait, so it also runs in a background tab)
+    let left = 3000, from = 0;
+    const close = () => { el.dataset.closing = ''; setTimeout(() => el.remove(), 140); };
+    const arm = () => { from = performance.now(); toastT = setTimeout(close, left); };
+    el.addEventListener('mouseenter', () => { clearTimeout(toastT); left = Math.max(800, left - (performance.now() - from)); });
+    el.addEventListener('mouseleave', arm);
+    arm();
+  }
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; } catch (_) {}
+    try { const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;opacity:0'; document.body.appendChild(ta); ta.select();
+      const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (_) { return false; }
+  }
+  let copyT = 0;
+  $('copy').addEventListener('click', async () => {
+    const ok = await copyText(location.href), b = $('copy');
+    b.innerHTML = ok ? `${CHECK}Copied` : 'Copy failed';
+    toast(ok ? 'Link copied' : 'Couldn’t copy the link', ok ? CHECK : '');
+    clearTimeout(copyT); copyT = setTimeout(() => { b.textContent = 'Copy link'; }, 2000);
+  });
+  addEventListener('keydown', (e) => { if (e.key === ' ' && e.target === document.body) { e.preventDefault(); togglePlay(); } });
+
+  // ── Assets sheet: the Lottie files in SPEC.assets — preview, numbers from the file, scenes, Download / Download all ──
+  const ASSETS = window.SPEC.assets || [], sheet = $('assetSheet'), DL = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  const pad2 = (n) => String(n).padStart(2, '0'), inIter = (a) => !a.iters || a.iters.includes(v);
+  const fileOf = (a) => a.download || decodeURIComponent(a.file.split('?')[0].split('/').pop());
+  const assetData = new Map();
+  // bytes as served (so a download is the file exactly). The preview plays a.preview (a Lottie JSON) when given, else
+  // the file itself: a .json is parsed, a .lottie (dotLottie = zip of manifest.json + animations/<id>.json) is opened
+  // in-page — stored or deflated entries, inflated with the browser's DecompressionStream
+  const isJson = (a) => !/\.lottie(\?|#|$)/i.test(a.file);
+  async function unzipLottie(bytes) {
+    const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength), dec = new TextDecoder();
+    let e = bytes.length - 22; while (e >= 0 && dv.getUint32(e, true) !== 0x06054b50) e--; if (e < 0) return null;
+    let q = dv.getUint32(e + 16, true);
+    for (let k = dv.getUint16(e + 10, true); k > 0; k--) {
+      const meth = dv.getUint16(q + 10, true), csz = dv.getUint32(q + 20, true), nl = dv.getUint16(q + 28, true), xl = dv.getUint16(q + 30, true), cl = dv.getUint16(q + 32, true), off = dv.getUint32(q + 42, true);
+      const name = dec.decode(bytes.subarray(q + 46, q + 46 + nl)); q += 46 + nl + xl + cl;
+      if (!/^(animations\/)?[^/]+\.json$/i.test(name) || /manifest\.json$/i.test(name)) continue;
+      const at = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true), raw = bytes.subarray(at, at + csz);
+      if (meth === 0) return JSON.parse(dec.decode(raw));
+      if (meth === 8 && 'DecompressionStream' in window) return JSON.parse(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text());
+      return null;
+    }
+    return null;
+  }
+  const getAsset = (a) => { if (!assetData.has(a.file)) assetData.set(a.file, fetch(a.file).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+    .then(async (buf) => { const bytes = new Uint8Array(buf); let json = null;
+      try { json = a.preview ? await fetch(a.preview).then((r) => r.json()) : isJson(a) ? JSON.parse(new TextDecoder().decode(bytes)) : await unzipLottie(bytes); } catch (_) {}
+      return { bytes, json }; })); return assetData.get(a.file); };
+  let lottieP = null, players = [], sheetT = 0, sheetFrom = null;
+  const loadLottie = () => lottieP ||= window.lottie ? Promise.resolve(window.lottie) : new Promise((res, rej) => {
+    const el = document.createElement('script'); el.src = window.SPEC.lottieLib || 'https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie_light.min.js';
+    el.onload = () => res(window.lottie); el.onerror = rej; document.head.appendChild(el); });
+  function renderAssets() {
+    const item = (a) => { const i = ASSETS.indexOf(a);
+      return `<li class="ast"><div class="ast__pv"${a.bg ? ` style="--pv-bg:${esc(a.bg)}"` : ''}><div class="ast__lot" id="astLot${i}"></div></div><div class="ast__main">
+        <b>${esc(a.name)}</b><span class="ast__file">${esc(fileOf(a))}</span>
+        <div class="ast__tags"><span class="tag">${a.iters ? `Iteration ${a.iters.map(pad2).join(' · ')}` : Object.keys(PATHS).length > 1 ? 'All iterations' : `Iteration ${pad2(v)}`}</span></div></div>
+        <button class="abtn abtn--sm ast__dl" type="button" data-dl="${i}" aria-label="Download ${esc(fileOf(a))}">${DL}Download</button></li>`; };
+    const here = ASSETS.filter(inIter);                         // only the iteration being viewed
+    $('assetList').innerHTML = here.length ? `<p class="eyebrow">Iteration ${pad2(v)}</p><ul>${here.map(item).join('')}</ul>` : `<p class="sheet__empty">No Lottie plays in Iteration ${pad2(v)}.</p>`;
+    $('assetCount').textContent = here.length;
+    $('assetAll').hidden = !here.length; $('assetAll').innerHTML = `${DL}Download all${here.length > 1 ? ` (${here.length})` : ''}`;
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    ASSETS.forEach((a, i) => getAsset(a).then(async (d) => {
+      const j = d.json, box = $(`astLot${i}`); if (!box) return;
+      if (!j) { box.parentNode.classList.add('ast__pv--file'); box.textContent = isJson(a) ? '.json' : '.lottie'; return; }   // couldn't read it: name the format
+      box.parentNode.style.aspectRatio = `${j.w} / ${j.h}`;
+      const L = await loadLottie(); if (!sheet.classList.contains('is-open') || !box.isConnected) return;
+      players.push(L.loadAnimation({ container: box, renderer: 'svg', loop: true, autoplay: !still, animationData: structuredClone(j), rendererSettings: { preserveAspectRatio: 'xMidYMid meet' } }));
+    }).catch(() => {}));
+  }
+  function paintAssets() {                                      // the header badge counts the viewed iteration's Lotties
+    if (!ASSETS.length) return; const n = ASSETS.filter(inIter).length;
+    $('assetsN').textContent = n; $('assetsBtn').setAttribute('aria-label', `Lottie assets in Iteration ${pad2(v)}: ${n}`);
+  }
+  function openAssets() {
+    clearTimeout(sheetT); sheetFrom = document.activeElement; sheet.hidden = false; delete sheet.dataset.closing;
+    renderAssets(); void sheet.offsetWidth; sheet.classList.add('is-open'); $('assetsBtn').setAttribute('aria-expanded', 'true');
+    sheet.querySelector('.sheet__x').focus({ preventScroll: true });
+  }
+  function closeAssets() {
+    if (!sheet.classList.contains('is-open')) return;
+    sheet.classList.remove('is-open'); sheet.dataset.closing = ''; $('assetsBtn').setAttribute('aria-expanded', 'false');
+    sheetT = setTimeout(() => { sheet.hidden = true; players.forEach((pl) => pl.destroy()); players = []; $('assetList').innerHTML = ''; }, 180);
+    if (sheetFrom && sheetFrom.focus) sheetFrom.focus({ preventScroll: true });
+  }
+  const saveBlob = (blob, name) => { const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000); };
+  // Download all: one .zip (stored, no compression — Lottie JSON is small and this keeps the page dependency-free)
+  const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+  const crc32 = (u) => { let c = ~0; for (let i = 0; i < u.length; i++) c = CRC[(c ^ u[i]) & 255] ^ (c >>> 8); return ~c >>> 0; };
+  function zipStore(files) {
+    const enc = new TextEncoder(), out = [], cen = []; let off = 0;
+    for (const f of files) {
+      const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length, h = new DataView(new ArrayBuffer(30)), c = new DataView(new ArrayBuffer(46));
+      [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [12, 0x21, 2], [14, crc, 4], [18, sz, 4], [22, sz, 4], [26, nm.length, 2]].forEach(([o, x, n]) => (n === 4 ? h.setUint32(o, x, true) : h.setUint16(o, x, true)));
+      [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [14, 0x21, 2], [16, crc, 4], [20, sz, 4], [24, sz, 4], [28, nm.length, 2], [42, off, 4]].forEach(([o, x, n]) => (n === 4 ? c.setUint32(o, x, true) : c.setUint16(o, x, true)));
+      out.push(h, nm, f.data); cen.push(c, nm); off += 30 + nm.length + sz;
+    }
+    const csz = cen.reduce((t, p) => t + p.byteLength, 0), e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true); e.setUint32(12, csz, true); e.setUint32(16, off, true);
+    return new Blob([...out, ...cen, e], { type: 'application/zip' });
+  }
+  if (ASSETS.length) {
+    $('assetsBtn').hidden = false; paintAssets(); $('assetsBtn').setAttribute('aria-expanded', 'false');
+    $('assetsBtn').addEventListener('click', openAssets);
+    sheet.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-close]')) return closeAssets();
+      const dl = e.target.closest('[data-dl]');
+      if (dl) { const a = ASSETS[+dl.dataset.dl]; try { const d = await getAsset(a); saveBlob(new Blob([d.bytes], { type: isJson(a) ? 'application/json' : 'application/zip+dotlottie' }), fileOf(a)); toast(`Downloaded ${esc(fileOf(a))}`); }
+        catch (_) { toast('Couldn’t download the file', ''); } return; }
+      if (e.target.closest('#assetAll')) {
+        try { const enc = new TextEncoder(), seen = new Set();
+          const files = await Promise.all(ASSETS.filter(inIter).map(async (a) => { const d = await getAsset(a); return { name: fileOf(a), data: d.bytes }; }));
+          files.forEach((f) => { let n = f.name, k = 2; while (seen.has(n)) n = f.name.replace(/(\.[^.]+)?$/, ` ${k++}$1`); seen.add(n); f.name = n; });
+          const zipName = `${window.SPEC.title.replace(/ — .*/, '')} — Iteration ${pad2(v)} — Lottie assets.zip`.replace(/[\\/:*?"<>|]/g, '-');
+          saveBlob(zipStore(files), zipName); toast(`Downloaded ${files.length} Lottie file${files.length > 1 ? 's' : ''} (.zip)`);
+        } catch (_) { toast('Couldn’t download the files', ''); }
+      }
+    });
+    addEventListener('keydown', (e) => {
+      if (!sheet.classList.contains('is-open')) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeAssets(); return; }
+      if (e.key === 'Tab') { const f = [...sheet.querySelectorAll('button, a[href]')].filter((x) => !x.disabled && x.offsetParent); if (!f.length) return;
+        const first = f[0], last = f[f.length - 1]; if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); } }
+    }, true);
+  }
+
+  document.title = window.SPEC.title.replace(/ — .*/, '') + ' Spec';
+  document.documentElement.style.setProperty('--pw', `${DW}px`); document.documentElement.style.setProperty('--ph', `${DH}px`);
+  if (window.SPEC.legend && window.SPEC.legend.approx) $('legendApprox').textContent = window.SPEC.legend.approx;
+  renderTimeline(); fit(); rebuild();
+})();
+</script>
+<script>
+/* Flow count beside the section head, as in the kit's sidebar — page chrome only, outside the shared engine */
+(() => {
+  const n = window.SPEC && window.SPEC.scenes ? window.SPEC.scenes.length : document.querySelectorAll('#flow li').length;
+  document.getElementById('flowCount').textContent = n || '';
+})();
+</script>
+</body>
+</html>

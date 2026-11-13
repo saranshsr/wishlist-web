@@ -179,6 +179,23 @@
 }
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&display=swap" rel="stylesheet" />
+<style>
+  /* Spec Sheet entry — prototype tool beside the panel (not part of the page UI); Lightweight UI kit, see spec/ */
+  .vswitch{--vs-ink:#18191d;--vs-muted:#666879;--vs-line:#ededec;position:fixed;top:50%;left:max(8px,calc(50% - 600px - 76px));transform:translateY(-50%);z-index:1000;display:flex;flex-direction:column;gap:4px;padding:6px;background:#fff;border:1px solid var(--vs-line);border-radius:16px;corner-shape:superellipse(4);box-shadow:0 1px 2px rgb(0 0 0 / .04)}
+  .vswitch__b{width:36px;height:36px;border-radius:10px;corner-shape:superellipse(4);display:grid;place-items:center;background:transparent;border:0;padding:0;color:var(--vs-ink);font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;cursor:pointer;transition:background-color 160ms cubic-bezier(.23,1,.32,1),transform 160ms cubic-bezier(.23,1,.32,1);-webkit-tap-highlight-color:transparent}
+  @media (hover:hover) and (pointer:fine){.vswitch__b:hover{background:color-mix(in oklab,var(--vs-ink) 4%,transparent)}}
+  .vswitch__b:active{transform:scale(.97)}
+  .vswitch__b:focus-visible{outline:2px solid var(--vs-ink);outline-offset:2px}
+  @supports not (corner-shape:round){.vswitch{border-radius:2.4px}.vswitch__b{border-radius:1.5px}}
+  @media (max-width:520px){.vswitch{display:none}}
+  .vswitch__spec{position:relative}
+  .vswitch__spec svg{width:18px;height:18px}
+  /* the panel sits right of the bar, so the label opens to the right (the kit's ink tooltip) */
+  .vswitch__spec::after{content:attr(data-tip);position:absolute;left:calc(100% + 12px);top:50%;transform:translate(-4px,-50%);padding:6px 8px;border-radius:8px;corner-shape:superellipse(4);background:var(--vs-ink);color:#fff;font-family:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:12px;font-weight:500;white-space:nowrap;box-shadow:0 4px 12px -4px rgb(0 0 0 / .4);opacity:0;pointer-events:none;transition:opacity 125ms cubic-bezier(.23,1,.32,1),transform 125ms cubic-bezier(.23,1,.32,1)}
+  .vswitch__spec:hover::after,.vswitch__spec:focus-visible::after{opacity:1;transform:translate(0,-50%)}
+</style>
 </head>
 <body>
 <div class="page">
@@ -294,6 +311,11 @@
 </nav>
 
 
+
+<nav class="vswitch" id="vswitch" aria-label="Prototype tools">
+  <button class="vswitch__b vswitch__spec" id="vspec" data-tip="Spec Sheet" aria-label="Spec Sheet — animation spec for this prototype"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 5h5M3 10h9M3 15h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="10" y="3.5" width="7" height="3" rx="1.5" fill="currentColor"/><rect x="14" y="13.5" width="3" height="3" rx="1.5" fill="currentColor"/></svg></button>
+</nav>
+<script>document.getElementById('vspec').addEventListener('click', () => { location.href = '/spec/?v=1'; });</script>
 
 <script>
   // A module script's top-level await rejects silently — the panel slot just
