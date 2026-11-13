@@ -93,7 +93,9 @@ const FAN_FILL = ['38e2f.png', 'ec267.png'];
    and `rotate` properties. Those compose with — never replace — the
    `transform` the hover rules set, and they run on the compositor. Nothing is
    added to the markup, and at rest both properties are `none` again. */
-const HOP = { w: 15, z: 0.42 };          // ω rad/s, damping ratio: 1 dip of ~24%, no second bounce you can see
+// 13 Nov: no jump, no bounce — near-critical damping (no visible dip) and a
+// slower ω, so the spread eases out and back in the same family as the rest.
+const HOP = { w: 10, z: 0.95 };
 const HOP_DT = 1 / 60, HOP_MAX = 0.8;    // sample step and sampled length (s); past ~0.5s the tail is < 0.3px, by 0.8s < 0.05px
 /* Visual centre minus the transform-origin, per card, from the rest matrices
    (`e,f` of .mp-fan-l/-r/-mid). `rotate` pivots on the origin, so a rotation
@@ -103,14 +105,14 @@ const HOP_ARM = { l: [-27.567, -21.469], r: [-5.197, -21.469], mid: [-18.332, -2
 /* Peak offsets. y is px (negative = up), x px, r deg. 68px fan — a 4px hop is
    a 7% jump, clearly a hop without leaving the row. */
 const HOP_SELECT = {
-  mid: { d: 0,    x: 0,    y: -4,   r: -1.5 },  // the cover tips as it lifts, like the hover
-  l:   { d: 0.04, x: -1.5, y: -3,   r: -4 },
-  r:   { d: 0.04, x: 1.5,  y: -3,   r: 4 },
+  mid: { d: 0,    x: 0,    y: 0,    r: -1.5 },  // no lift: the cards spread in place
+  l:   { d: 0.04, x: -2,   y: 0,    r: -4 },
+  r:   { d: 0.04, x: 2,    y: 0,    r: 4 },
 };
 const HOP_SETTLE = {                     // the folder you left: set down, 1px
-  mid: { d: 0,    x: 0, y: 1,   r: 0 },
-  l:   { d: 0.02, x: 0, y: 0.8, r: 0 },
-  r:   { d: 0.02, x: 0, y: 0.8, r: 0 },
+  mid: { d: 0,    x: 0, y: 0,   r: 0 },
+  l:   { d: 0.02, x: 0, y: 0,   r: 0 },
+  r:   { d: 0.02, x: 0, y: 0,   r: 0 },
 };
 const hopWd = HOP.w * Math.sqrt(1 - HOP.z * HOP.z);
 // Free response of the spring from (x0, v0) after t seconds.
