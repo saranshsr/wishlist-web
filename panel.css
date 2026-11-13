@@ -342,6 +342,7 @@ html[data-edge-off] .mp-edge{display:none}
 /* The overscroll moves the camera here, not the content: no rubber band. */
 .mp-stage-wrap[data-depth] .mp-presence{transform:none}
 
-/* Rail glyph: static grey bar per tab, blue fill scales in place (no travel). */
+/* Rail glyph: static grey bar per tab, blue fades in/out in place. */
 .mp-row>.mp-glyph{position:absolute;left:2px;top:37px;width:4px;height:22px;border-radius:0 6px 6px 0;background:#d0d4dd;overflow:hidden;z-index:3;pointer-events:none}
-.mp-glyph-fill{position:absolute;inset:0;background:var(--brand);will-change:transform}
+.mp-glyph-fill{position:absolute;inset:0;background:var(--brand);opacity:0;transition:opacity 450ms cubic-bezier(.45,0,.25,1)}
+.mp-row[aria-selected="true"]>.mp-glyph .mp-glyph-fill{opacity:1}
