@@ -224,7 +224,7 @@
    moves (see CarouselTrack). The stage clips instead of scrolling: nothing
    in it ever needs to scroll, and the hidden sections below must not make it
    scrollable. Sections scale from their left edge, aligned to the rail. */
-.mp-stage-wrap[data-track] .mp-stage{overflow:hidden}
+.mp-stage-wrap[data-track] .mp-stage{overflow:hidden;overscroll-behavior:auto}   /* V3: nothing scrolls inside — a wheel over the panel scrolls the page */
 .mp-track{position:relative}
 .mp-track-sec{position:absolute;left:0;right:0;transform-origin:0% 50%;overflow:hidden}
 
