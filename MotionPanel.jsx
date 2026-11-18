@@ -1586,6 +1586,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
 
     const onWheel = (e) => {
       if (!e.deltaY) return;
+      // V3 (18 Nov): no scroll-to-switch. The panel is as tall as its products
+      // and the page itself scrolls; collections change on a tab click only.
+      if (style === 'carousel') return;
       const now = performance.now();
       const a = Math.abs(e.deltaY), sign = Math.sign(e.deltaY), down = sign > 0;
 
@@ -1607,36 +1610,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       clearTimeout(g.timer);
       g.timer = setTimeout(() => { g.armed = true; g.acc = 0; g.coast = false; release(); }, PAUSE);
 
-      /* V3 · long lists: scroll the list first, anywhere over the panel.
-         A gesture that moved the list is disarmed for the rest of its life,
-         so the scroll (and trackpad momentum) that reaches the end stops
-         there; only a fresh gesture — after a pause, a reversal, or a new
-         flick on top of the momentum — can switch collections. */
-      if (style === 'carousel') {
-        const k = activeRef.current, max = trackMax(k, el.clientHeight), sv = listScroll[k];
-        // An explicit flag: MotionValue.isAnimating() stayed true after an
-        // eased notch was stopped, so the next gesture skipped the list.
-        const switching = trackSwitching.current;
-        // A gesture that switched collections is spent: its momentum must not
-        // then scroll the list it just landed on.
-        if (g.spent) { e.preventDefault(); return; }
-        if (max > 0 && !switching) {
-          const base = lt.anim ? lt.target : sv.get();
-          const sNow = base;
-          if (down ? sNow < max - 0.5 : sNow > 0.5) {
-            e.preventDefault();
-            g.armed = false; g.acc = 0; release();
-            const nt = Math.max(0, Math.min(max, base + e.deltaY));
-            if (lt.anim) { lt.anim.stop(); sv.stop(); lt.anim = null; }
-            if (a >= 40) {
-              // Mouse-wheel notches: ease each step instead of jumping 100px.
-              lt.target = nt;
-              lt.anim = animate(sv, nt, { duration: 0.28, ease: [0.23, 1, 0.32, 1], onComplete: () => { lt.anim = null; } });
-            } else sv.set(nt);
-            return;
-          }
-        }
-      }
       // Over the rail or header there is no native scroll to hand the wheel
       // to, so the whole panel counts as being at an edge.
       const inStage = el.contains(e.target);
@@ -2240,19 +2213,6 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     m(); const ro = new ResizeObserver(m); ro.observe(el); return () => ro.disconnect();
   }, []);
 
-  /* V3 · long lists: the scroll fades follow the active list's scroll — a soft
-     top edge once you've scrolled in, a bottom edge while there's more below. */
-  React.useEffect(() => {
-    if (style !== 'carousel') return;
-    const wrap = wrapRef.current; if (!wrap) return;
-    const max = trackMax(active, stageMid * 2), sv = listScroll[active];
-    const sync = (sc) => {
-      wrap.style.setProperty('--fade-top', Math.max(0, Math.min(28, sc)).toFixed(1) + 'px');
-      wrap.style.setProperty('--fade-bot', Math.max(0, Math.min(44, max - sc)).toFixed(1) + 'px');
-    };
-    sync(sv.get());
-    return sv.on('change', sync);
-  }, [active, stageMid, style]);
 
   /* ---- rail selection ----
      `pos` is the fractional collection index the white selection row sits at.
@@ -2306,8 +2266,13 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       /* V6 · Breathing Tray: the panel is the tray — its height follows the
          collection (header + rows + padding), on one spring. */
       initial={false}
-      animate={style === 'tray' ? { height: Math.max(RAIL_MIN_H, GRID_TOP + sectionH(col.items.length) + 20) } : undefined}
-      transition={{ height: reduce ? { duration:0 } : { type:'spring', visualDuration:0.5, bounce:0.12 } }}>
+      animate={style === 'tray' ? { height: Math.max(RAIL_MIN_H, GRID_TOP + sectionH(col.items.length) + 20) }
+        /* V3 (18 Nov): the panel is as tall as the collection (header 72 +
+           rows + 20 padding; 7 cards = the original 1080) and resizes with
+           the switch, on the strip's own curve, so the page scrolls to see a
+           long list. */
+        : style === 'carousel' ? { height: sectionH(col.items.length) + 92 } : undefined}
+      transition={{ height: reduce ? { duration:0 } : style === 'carousel' ? TRACK_EASE : { type:'spring', visualDuration:0.5, bounce:0.12 } }}>
       {/* rail */}
       <LayoutGroup>
       <nav className="mp-rail" role="tablist">
@@ -2408,7 +2373,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
         ) : style === 'chain' ? (
           <ChainTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : style === 'carousel' ? (
-          <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} view={stageMid * 2} launch={launchRef} switching={trackSwitching} scrolls={listScroll} />
+          <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} view={Infinity} launch={launchRef} switching={trackSwitching} scrolls={listScroll} />
         ) : style === 'stack' ? (
           <StackDeck active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : isSharedGrid ? (
