@@ -69,13 +69,15 @@
 
   /* ---------------- middle: panel container ---------------- */
   .middle{background:var(--page);padding:24px 120px}
-  .listbar{display:flex;align-items:center;justify-content:space-between;width:1200px;height:44px;margin:0 auto 20px}
+  .listbar{display:flex;align-items:center;justify-content:space-between;width:1200px;height:40px;margin:0 auto 20px}
+  /* Gifting Registry handoff 620:628446: "My lists" H24 + M-PrimaryButton. */
+  .listbar-title{margin:0;font-family:var(--noontree);font-weight:700;font-size:22px;line-height:32px;letter-spacing:-.25px;color:#1d2539;white-space:nowrap}
   .switch{position:relative;display:flex;align-items:center;width:264px;height:44px;padding:4px;border-radius:9999px;background:#eaecf0;box-shadow:inset 0 1px 4px rgba(36,36,36,.04)}
   .switch .seg{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 10px;border-radius:9999px;font-family:var(--noontree);font-size:14px;line-height:20px;font-weight:600;letter-spacing:-.1px;color:#666d85}
   .switch .seg.on{background:#fff;border:1px solid #fff;color:#1d2539;box-shadow:0 1px 3px rgba(34,34,34,.06)}
   .newpill{display:flex;align-items:center;justify-content:center;padding:2px 6px;border-radius:12px;background:linear-gradient(#19cb83,#0f8857);color:#fff;font-family:var(--noontree);font-size:11px;line-height:14px;font-weight:700;letter-spacing:-.1px}
-  .create{display:flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:14px 16px 14px 12px;background:#0f7eff;border-radius:10px;color:#fff;font-family:var(--noontree);font-size:14px;line-height:20px;font-weight:600}
-  .create img{width:20px;height:20px}
+  .create{display:flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:14px 16px 14px 12px;background:#0f7eff;border-radius:10px;color:#fff;font-family:var(--noontree);font-size:14px;line-height:20px;font-weight:600;letter-spacing:0;white-space:nowrap}
+  .create img{width:18px;height:18px}
 
   .panelwrap{width:1200px;margin:0 auto}
   /* Height comes from the panel (V6 · Tray breathes); reserved until it mounts. */
@@ -244,11 +246,8 @@
   <!-- ============ MIDDLE: list bar + live panel ============ -->
   <div class="middle">
     <div class="listbar">
-      <div class="switch">
-        <span class="seg on">Wish lists</span>
-        <span class="seg">Gift lists <span class="newpill">NEW</span></span>
-      </div>
-      <div class="create"><img src="assets/chrome/plus-60e6c.svg" alt="">Create new list</div>
+      <h1 class="listbar-title">My lists</h1>
+      <div class="create"><img src="assets/chrome/plus-18-620628449.svg" alt="">Create new</div>
     </div>
     <div class="panelwrap"><div id="panel"></div></div>
   </div>
