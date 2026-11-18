@@ -533,12 +533,16 @@ window.SPEC = (() => {
     lin:   { name: 'Linear', fn: 'linear(0, 1)' },
   };
 
-  /* ── the track: geometry straight from MotionPanel.jsx ─────────────────────── */
-  const ITEMS = [7, 2, 1], NAMES = ['All saved items', 'Home decor', 'Sneakers'];
+  /* ── the track: geometry straight from MotionPanel.jsx ───────────────────────
+   CarouselTrack gets view = Infinity, so every section window is its full height (no inner scroll) and the strip
+   offsets are cumulative sectionH + 48. The panel (.mp-frame) is sectionH + 92 tall and animates on the same curve. */
+  const ITEMS = [20, 2, 1], NAMES = ['All saved items', 'Home decor', 'Sneakers'];
   const COLS = 4, CARD_H = 484, GAP = 20, TRACK_GAP = 48, SCALE_MIN = 0.75, ROW = 96;
-  const SEC_H = ITEMS.map((n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r * CARD_H + (r - 1) * GAP; });   // 988 · 484 · 484
-  const OFFS = (() => { let o = 0; return SEC_H.map((h) => { const a = o; o += h + TRACK_GAP; return a; }); })();       // 0 · 1036 · 1568
-  const TD = 900;                                                                                                     // TRACK_EASE.duration
+  const SEC_H = ITEMS.map((n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r * CARD_H + (r - 1) * GAP; });   // 2500 · 484 · 484
+  const OFFS = (() => { let o = 0; return SEC_H.map((h) => { const a = o; o += h + TRACK_GAP; return a; }); })();       // 0 · 2548 · 3080  (= trackOffs(Infinity): each section window is its full height)
+  const FRAME_PAD = 92;                                                                                               // header 72 + 20 padding
+const FRAME_H = SEC_H.map((h) => h + FRAME_PAD);                                                                    // 2592 · 576 · 576
+const TD = 900;                                                                                                     // TRACK_EASE.duration
   const yAt = (a, b, t) => -(OFFS[a] + (OFFS[b] - OFFS[a]) * B.track(t / TD));
   const pitchOf = (k, dist) => (dist > 0 && k > 0 ? OFFS[k] - OFFS[k - 1] : SEC_H[k] + TRACK_GAP);
   const prog = (k, y) => { const dist = OFFS[k] + y; return Math.min(1, Math.abs(dist) / pitchOf(k, dist)); };
@@ -581,7 +585,7 @@ window.SPEC = (() => {
     return rows;
   }
 
-  /* ── rows shared by the three tab-click scenes and the wheel scene ───────────────────────────────── */
+  /* ── rows shared by the three tab-click scenes ─────────────────────────────────────────────────── */
   const glyphSel = (k) => `.mp-row:nth-of-type(${k + 1}) .mp-glyph-fill`;
   const rowSel = (k) => `.mp-row:nth-of-type(${k + 1})`;
   function switchRows(a, b, o = {}) {
@@ -611,9 +615,14 @@ window.SPEC = (() => {
       note: 'Same 450ms in, same curve, starting together with the exit.' });
     rows.push({ icon: 'size', prop: 'Blur', layer: `Heading · ${NAMES[b]}`, sel: '.mp-title', delay: 0, dur: 450, from: '10px', to: '0px', ease: C('head') });
     rows.push({ grp: 'Content track', at: 0, note: 'All collections sit on one vertical strip; only the strip moves.' });
+    const lo = Math.min(a, b), hi = Math.max(a, b), steps = [];
+    for (let k = lo; k < hi; k++) steps.push(`${SEC_H[k]} + ${TRACK_GAP} gap`);
     rows.push({ icon: 'move', prop: 'Move Y', layer: 'Track', sel: '.mp-track', delay: 0, dur: TD, from: `${-OFFS[a]}px`, to: `${-OFFS[b]}px`, ease: C('track'),
-      note: `One tween, ${TD}ms, cubic-bezier(0.3, 0.05, 0.05, 1): the strip travels ${dist}px (${a === 0 || b === 0 ? 'section height 988 + 48 gap' : 'section height 484 + 48 gap'}${n > 1 ? ' + 532 for the second step' : ''}). Sections sit ${TRACK_GAP}px apart. Switching mid-flight retargets the strip from where it is, so two sections can never land on the same spot.` });
+      note: `One tween, ${TD}ms, cubic-bezier(0.3, 0.05, 0.05, 1): the strip travels ${dist}px (${steps.join(', then ')}). Each section is its full height, so the distance depends on the list: All saved items is 2500px (5 rows), the others 484px. Sections sit ${TRACK_GAP}px apart. Switching mid-flight retargets the strip from where it is, so two sections can never land on the same spot.` });
     rows.push(...sectionRows(a, b));
+    rows.push({ grp: 'Panel', at: 0, note: 'The panel is as tall as the collection, so it grows and shrinks with the switch. The page scrolls normally to see a long list; switching is by tab click only.' });
+    rows.push({ icon: 'size', prop: 'Height', layer: 'Panel', sel: '.mp-frame', delay: 0, dur: TD, from: `${FRAME_H[a]}px`, to: `${FRAME_H[b]}px`, ease: C('track'),
+      note: `Height = list height + 92 (72 header + 20 padding): ${FRAME_H[a]}px → ${FRAME_H[b]}px (${SEC_H[a]} → ${SEC_H[b]} of cards). Same ${TD}ms curve as the strip, started on the same click, so the panel edge and the cards move as one.` });
     rows.push({ grp: 'Edge fade', at: 0, note: 'A grid sliding past the stage edge would shear flat, so the stage fades and blurs its top and bottom edges while it moves.' });
     rows.push({ icon: 'size', prop: 'Fade band', layer: 'Edge fade', sel: '.mp-stage-wrap', delay: 0, dur: 60, from: '0px', to: '14px', ease: C('lin'),
       note: 'On the switch the band is up in 60ms: a 14px mask at the stage top and bottom with a 1.5px backdrop blur (data-moving). Nothing else on the page changes.' });
@@ -649,30 +658,13 @@ window.SPEC = (() => {
     ];
   }
 
-  /* ── wheel: scroll past the grid edge ──────────────────────────────────────── */
-  const WHEEL = { kind: 'custom', label: 'Overscroll gesture', tag: 'Wheel gesture',
-    info: [['Threshold', '48px of deltaY, accumulated'], ['Min gap', '380ms between switches (queued, not dropped)'], ['New gesture', '180ms pause · reversal ≥ 10px · surge while coasting'],
-      ['Speed handed on', 'capped at 1400px/s (unused by the carousel)'], ['Content nudge', 'none — cards and labels stay put'], ['Last collection', 'no switch, no movement'],
-      ['Long lists', 'scroll in place first; a gesture that scrolled the list (or its momentum) can never switch — only a fresh gesture at the end/top does'],
-      ['Arriving by scroll up', 'previous list opens at its bottom; by scroll down or click, at its top'],
-      ['Switch travel', 'always one stage-height window, however long the list']],
-    code: 'wheel.deltaY accumulates at an edge → |acc| ≥ 48 → setActive(active ± 1)', plot: { f: (t) => clamp01(t / 0.016), span: 0.016 } };
-  function wheelRows() {
-    const a = 2, b = 1;
-    return [
-      { grp: 'Wheel gesture', at: 0, note: 'A list taller than the stage (All saved items, 20 items) scrolls inside its window first; the switch below only happens from its end (scrolling down) or top (scrolling up), on a fresh gesture.' },
-      { icon: 'flag', prop: 'Overscroll', layer: 'Wheel gesture', sel: '.mp-stage', delay: 0, dur: 16, from: '0px', to: '48px', ease: WHEEL,
-        note: 'The switch fires the instant the accumulated wheel delta reaches 48px: the first event of a mouse notch (~100px), or within a few frames of a trackpad flick. One gesture = one switch, and a gesture that scrolled a long list is spent: the scroll that brings you to the end stops there. The wheel re-arms after a 180ms pause, a reversal, or a fresh flick on top of momentum.' },
-      ...switchRows(a, b),
-    ];
-  }
-
   /* ── reduced motion (documented from the code; not recordable) ───────────────── */
   function reducedRows() {
     return [
       { grp: 'Instant', at: 0, note: 'reduce → the strip and the selection snap; no edge fade.' },
       { icon: 'move', prop: 'Move Y', layer: 'Selection', sel: '.mp-sel', delay: 0, dur: 1, from: '0px', to: '96px', ease: C('lin'), note: 'The white row jumps to the chosen tab (animate with duration 0).' },
-      { icon: 'move', prop: 'Move Y', layer: 'Track', sel: '.mp-track', delay: 0, dur: 1, from: '0px', to: '−1036px', ease: C('lin'), note: 'The strip is set in place — no travel, no scale or opacity tween: the chosen section is simply shown. The edge fade stays off (--fade-move is 0).' },
+      { icon: 'move', prop: 'Move Y', layer: 'Track', sel: '.mp-track', delay: 0, dur: 1, from: '0px', to: '−2548px', ease: C('lin'), note: 'The strip is set in place — no travel, no scale or opacity tween: the chosen section is simply shown. The edge fade stays off (--fade-move is 0).' },
+      { icon: 'size', prop: 'Height', layer: 'Panel', sel: '.mp-frame', delay: 0, dur: 1, from: '2592px', to: '576px', ease: C('lin'), note: 'The panel height changes at once too (duration 0), no resize tween.' },
       { grp: 'Still animated', at: 0, note: 'Fades that carry no travel are kept.' },
       { icon: 'opacity', prop: 'Opacity', layer: 'Heading · All saved items', sel: '.mp-title', delay: 0, dur: 450, from: '100%', to: '0%', ease: C('head'), note: 'The heading still cross-fades over 450ms, but without the 10px blur.' },
       { icon: 'opacity', prop: 'Opacity', layer: 'Heading · Home decor', sel: '.mp-title', delay: 0, dur: 450, from: '0%', to: '100%', ease: C('head') },
@@ -685,15 +677,14 @@ window.SPEC = (() => {
 
   /* ═══ scenes ═════════════════════════════════════════════════════════════ */
   const SCENES = [
-    { id: 0, name: 'Overview', trig: 'the full journey, played end to end', summary: 'Hover → tab down → tab up → two-step jump → scroll up → hover', overview: true },
+    { id: 0, name: 'Overview', trig: 'the full journey, played end to end', summary: 'Hover → tab down → tab up → two-step jump → hover', overview: true },
     { id: 1, name: 'Switch to a tab below', trig: 'Click “Home decor” in the rail (All saved items → Home decor)', rows: () => switchRows(0, 1, { hover: true }) },
     { id: 2, name: 'Switch to a tab above', trig: 'Click “All saved items” in the rail (Home decor → All saved items)', rows: () => switchRows(1, 0, { hover: true }) },
     { id: 3, name: 'Two-step jump', trig: 'Click “Sneakers” in the rail (All saved items → Sneakers, skipping Home decor)', rows: () => switchRows(0, 2, { hover: true }) },
     { id: 4, name: 'Hover a tab', trig: 'Move the pointer onto an unselected tab, then away', rows: () => hoverRows() },
-    { id: 5, name: 'Scroll past the edge', trig: 'Wheel / trackpad past the grid edge (Sneakers → Home decor, wheel up)', rows: () => wheelRows() },
-    { id: 6, name: 'Reduced motion', trig: 'System setting “Reduce motion” — documented from the code (the preview stays at rest)', rows: () => reducedRows() },
+    { id: 5, name: 'Reduced motion', trig: 'System setting “Reduce motion” — documented from the code (the preview stays at rest)', rows: () => reducedRows() },
   ];
-  const ORDER = [4, 1, 2, 3, 5, 4];     // the journey: hover, then each trigger in turn, ending on a hover
+  const ORDER = [4, 1, 2, 3, 4];     // the journey: hover, then each trigger in turn, ending on a hover
   function overview(v) {
     const at = [], len = ORDER.map((id) => sceneEnd(SCENES[id].rows(v)));
     let t = 200; ORDER.forEach((id, i) => { at.push(t); t += len[i] + 700; });
@@ -704,15 +695,14 @@ window.SPEC = (() => {
       { at: at[1] - 450, fire: hov(1, true) }, { at: at[1], fire: (d, w) => FIRE[1](d, w) },  // pointer back on Home decor, click
       { at: at[2] - 450, fire: hov(0, true) }, { at: at[2], fire: (d, w) => FIRE[2](d, w) },  // → All saved items
       { at: at[3] - 450, fire: hov(2, true) }, { at: at[3], fire: (d, w) => FIRE[3](d, w) },  // → Sneakers
-      { at: at[4] - 300, fire: hov(-1, false) }, { at: at[4], fire: (d, w) => FIRE[5](d, w) }, // pointer into the grid, wheel up → Home decor
-      { at: at[5], fire: (d, w) => FIRE[4](d, w, 0) },                                       // hover All saved items
+      { at: at[4] - 300, fire: hov(-1, false) }, { at: at[4], fire: (d, w) => FIRE[4](d, w, 0) },   // pointer off Sneakers, then onto All saved items
     ];
     return { rows, beats };
   }
 
   /* ═══ driving the real prototype ═════════════════════════════════════════════
      The page is a 1440px noon desktop page; the spec shows just the panel (nav, list bar, help band and
-     footer hidden inside the recorder) at 1200×1080 plus a 24px margin. :hover can't be produced in the
+     footer hidden inside the recorder) 1200 wide with a 24px margin (the preview shows its top 1128px; All saved items is 2592 tall). :hover can't be produced in the
      recorder, so the hover rules of panel.css are cloned onto an `.is-hover` class (read from the
      stylesheet itself, never retyped) and the scenes toggle that class. */
   const until = async (e, cond, max = 8000) => { const lim = e.vt + max; while (!cond()) { if (e.vt >= lim) throw new Error('timeout'); await e.advanceTo(e.vt + 16, 16); } };
@@ -751,21 +741,18 @@ window.SPEC = (() => {
     async home(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[1].click(); await until(e, () => settledAt(d, 1)); },
     async homeHoverAll(d, w, e) { await ST.home(d, w, e); d.querySelectorAll('.mp-row')[0].classList.add('is-hover'); await e.advanceTo(e.vt + 700, 16); },
     async hover2(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[2].classList.add('is-hover'); await e.advanceTo(e.vt + 700, 16); },
-    async sneakers(d, w, e) { await ST.ready(d, w, e); d.querySelectorAll('.mp-row')[2].click(); await until(e, () => settledAt(d, 2)); },
   };
-  const PREP = { 1: 'hover1', 2: 'homeHoverAll', 3: 'hover2', 4: 'ready', 5: 'sneakers', 6: 'ready' };
-  const wheel = (d, w, dy) => d.querySelector('.mp-card').dispatchEvent(new w.WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true }));
+  const PREP = { 1: 'hover1', 2: 'homeHoverAll', 3: 'hover2', 4: 'ready', 5: 'ready' };
   const FIRE = {
     1: (d) => d.querySelectorAll('.mp-row')[1].click(),
     2: (d) => d.querySelectorAll('.mp-row')[0].click(),
     3: (d) => d.querySelectorAll('.mp-row')[2].click(),
     4: (d, w, k = 1) => { const row = d.querySelectorAll('.mp-row')[k]; row.classList.add('is-hover'); w.setTimeout(() => row.classList.remove('is-hover'), HOV); },
-    5: (d, w) => wheel(d, w, -100),
-    6: () => {},
+    5: () => {},
   };
 
   return {
-    title: 'Wishlist · Collection switch — Animation Spec', device: { w: 1248, h: 1128, label: 'Desktop panel (1200×1080 on a 1248×1128 page)' },
+    title: 'Wishlist · Collection switch — Animation Spec', device: { w: 1248, h: 1128, label: 'Desktop panel (top 1128px of a 1248px-wide page; All saved items is 2592px tall, the others 576px)' },
     paths: PATHS, iterations: ITER, springs: SPR, curves: CURVE, scenes: SCENES, overview, states: ST, prep: { ...PREP, 0: 'ready' }, fire: FIRE,
     assets: [],
   };
