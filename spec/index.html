@@ -652,14 +652,17 @@ window.SPEC = (() => {
   /* ── wheel: scroll past the grid edge ──────────────────────────────────────── */
   const WHEEL = { kind: 'custom', label: 'Overscroll gesture', tag: 'Wheel gesture',
     info: [['Threshold', '48px of deltaY, accumulated'], ['Min gap', '380ms between switches (queued, not dropped)'], ['New gesture', '180ms pause · reversal ≥ 10px · surge while coasting'],
-      ['Speed handed on', 'capped at 1400px/s (unused by the carousel)'], ['Content nudge', 'none — cards and labels stay put'], ['Last collection', 'no switch, no movement']],
+      ['Speed handed on', 'capped at 1400px/s (unused by the carousel)'], ['Content nudge', 'none — cards and labels stay put'], ['Last collection', 'no switch, no movement'],
+      ['Long lists', 'scroll in place first; a gesture that scrolled the list (or its momentum) can never switch — only a fresh gesture at the end/top does'],
+      ['Arriving by scroll up', 'previous list opens at its bottom; by scroll down or click, at its top'],
+      ['Switch travel', 'always one stage-height window, however long the list']],
     code: 'wheel.deltaY accumulates at an edge → |acc| ≥ 48 → setActive(active ± 1)', plot: { f: (t) => clamp01(t / 0.016), span: 0.016 } };
   function wheelRows() {
     const a = 2, b = 1;
     return [
-      { grp: 'Wheel gesture', at: 0, note: 'Nothing in the stage scrolls, so every wheel event is at an edge.' },
+      { grp: 'Wheel gesture', at: 0, note: 'A list taller than the stage (All saved items, 20 items) scrolls inside its window first; the switch below only happens from its end (scrolling down) or top (scrolling up), on a fresh gesture.' },
       { icon: 'flag', prop: 'Overscroll', layer: 'Wheel gesture', sel: '.mp-stage', delay: 0, dur: 16, from: '0px', to: '48px', ease: WHEEL,
-        note: 'The switch fires the instant the accumulated wheel delta reaches 48px: the first event of a mouse notch (~100px), or within a few frames of a trackpad flick. One gesture = one switch; the wheel re-arms after a 180ms pause, a reversal, or a fresh flick on top of momentum.' },
+        note: 'The switch fires the instant the accumulated wheel delta reaches 48px: the first event of a mouse notch (~100px), or within a few frames of a trackpad flick. One gesture = one switch, and a gesture that scrolled a long list is spent: the scroll that brings you to the end stops there. The wheel re-arms after a 180ms pause, a reversal, or a fresh flick on top of momentum.' },
       ...switchRows(a, b),
     ];
   }
