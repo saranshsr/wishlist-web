@@ -35,7 +35,8 @@ const PRODUCTS = {
 const COLLECTIONS = [
   /* 7 cards against a label of 9 is what frame 419:535726 draws — the count is
      the collection's size, the grid shows the first page of it. */
-  {id:'all',name:'All saved items',count:9,items:['rugHappy','iron','rugBirch','versace','nautica','versace','iron']},
+  // 18 Nov: long enough to scroll (5 rows), to show browsing a big list before a switch.
+  {id:'all',name:'All saved items',count:20,items:['rugHappy','iron','rugBirch','versace','nautica','versace','iron','rugBirch','sneaker','rugHappy','versace','iron','nautica','rugBirch','iron','rugHappy','versace','sneaker','rugBirch','nautica']},
   {id:'home',name:'Home decor',count:2,items:['rugBirch','rugHappy']},
   {id:'sneakers',name:'Sneakers',count:1,items:['sneaker']},
 ];
@@ -236,45 +237,74 @@ const sectionH = (n) => { const r = Math.max(1, Math.ceil(n / COLS)); return r *
 const TRACK_OFFS = (() => { let o = 0; return COLLECTIONS.map((c) => { const at = o; o += sectionH(c.items.length) + TRACK_GAP; return at; }); })();
 const TRACK_EASE = { duration: 0.9, ease: [0.3, 0.05, 0.05, 1] };
 
-function TrackSection({ k, c, y, on }) {
+/* Long lists (18 Nov): every collection is a window the height of the stage
+   (or of its rows, if shorter) on the strip, and scrolls its own rows inside
+   that window. The strip — and so the switch — only ever travels one window,
+   however long a list is, exactly as for short lists. The collection you
+   leave keeps showing the rows you were looking at as it goes, its window
+   edges softened by the same fade the stage uses. */
+const trackMax = (k, view) => Math.max(0, sectionH(COLLECTIONS[k].items.length) - view);
+const trackVis = (k, view) => Math.min(view, sectionH(COLLECTIONS[k].items.length));
+const trackOffs = (view) => { let o = 0; return COLLECTIONS.map((c, k) => { const at = o; o += trackVis(k, view) + TRACK_GAP; return at; }); };
+function TrackSection({ k, c, y, on, view, offs, scroll }) {
+  const vis = trackVis(k, view), max = trackMax(k, view);
   // Progress away from the centre, 0 (in place) … 1 (one pitch away). The
   // pitch is the distance to the neighbour on the side the section is on.
   const prog = (v) => {
-    const dist = TRACK_OFFS[k] + v;
-    const pitch = dist > 0 ? TRACK_OFFS[k] - TRACK_OFFS[k - 1] : sectionH(c.items.length) + TRACK_GAP;
+    const dist = offs[k] + v;
+    const pitch = dist > 0 && k > 0 ? offs[k] - offs[k - 1] : vis + TRACK_GAP;
     return Math.min(1, Math.abs(dist) / pitch);
   };
   const scale = useTransform(y, (v) => 1 - (1 - TRACK_SCALE) * prog(v));
   // Fully visible for the first 40% of the way out, then fading, so a short
   // section never sits half-visible above or below the one in place.
   const opacity = useTransform(y, (v) => Math.max(0, Math.min(1, 1 - (prog(v) - 0.4) / 0.6)));
+  const inner = useTransform(scroll, (v) => -v);
+  // Off stage (leaving or arriving) a long list's window carries the stage's
+  // scroll fade itself; in place, the stage does it.
+  const mask = useTransform(scroll, (v) => {
+    if (on || max === 0) return 'none';
+    const t = Math.max(0, Math.min(28, v)), b = Math.max(0, Math.min(44, max - v));
+    return `linear-gradient(to bottom, transparent 0, #000 ${t}px, #000 calc(100% - ${b}px), transparent 100%)`;
+  });
   return (
     <motion.div className="mp-track-sec" aria-hidden={!on}
-      style={{ top: TRACK_OFFS[k], scale, opacity, pointerEvents: on ? 'auto' : 'none' }}>
-      <div className="mp-grid">
+      style={{ top: offs[k], height: vis, scale, opacity, WebkitMaskImage: mask, maskImage: mask, pointerEvents: on ? 'auto' : 'none' }}>
+      <motion.div className="mp-grid" style={{ y: inner }} onUpdate={JS_DRIVEN}>
         {c.items.map((key, i) => <div key={i} className="mp-cell"><CardInner p={PRODUCTS[key]} /></div>)}
-      </div>
+      </motion.div>
     </motion.div>
   );
 }
 
-function CarouselTrack({ active, reduce, onSettle }) {
-  const y = useMotionValue(-TRACK_OFFS[active]);
+function CarouselTrack({ active, reduce, onSettle, view, launch, switching, scrolls }) {
+  const offs = React.useMemo(() => trackOffs(view), [view]);
+  const y = useMotionValue(-offs[active]);
+  const prev = React.useRef(active);
   React.useEffect(() => {
+    const from = prev.current; prev.current = active;
+    if (from === active) { y.set(-offs[active]); return; }
+    // A scroll up arrives at the bottom of the previous list (it reads as one
+    // continuous column); a click, or a scroll down, opens it at its top.
+    // Only set while the window is off stage, so a reversal mid-flight never
+    // makes the rows you can see jump.
+    const sc = scrolls[active], want = launch.current && active < from ? trackMax(active, view) : 0;
+    if (Math.abs(-y.get() - offs[active]) > (trackVis(active, view) + TRACK_GAP) * 0.9) { sc.stop(); sc.set(want); }
     // Reduced motion: no travel, the switch is instant.
-    if (reduce) { y.set(-TRACK_OFFS[active]); onSettle(); return; }
+    if (reduce) { y.set(-offs[active]); onSettle(); return; }
     // Tween from wherever the strip is right now, so an interruption is a
     // retarget, not a restart.
-    const a = animate(y, -TRACK_OFFS[active], TRACK_EASE);
+    switching.current = true;
+    const a = animate(y, -offs[active], { ...TRACK_EASE, onComplete: () => { switching.current = false; } });
     // Release the edge fade while the strip is still gliding in (it's ~95%
     // there at 0.58s), so the fade dissolves as the cards settle instead of
     // waiting for the curve's last pixels and vanishing after.
     const t = setTimeout(onSettle, 480);
-    return () => { a.stop(); clearTimeout(t); };
-  }, [active]);
+    return () => { a.stop(); switching.current = false; clearTimeout(t); };
+  }, [active, offs]);
   return (
-    <motion.div className="mp-track" style={{ y, height: sectionH(COLLECTIONS[active].items.length) }}>
-      {COLLECTIONS.map((c, k) => <TrackSection key={c.id} k={k} c={c} y={y} on={k === active} />)}
+    <motion.div className="mp-track" style={{ y, height: trackVis(active, view) }}>
+      {COLLECTIONS.map((c, k) => <TrackSection key={c.id} k={k} c={c} y={y} on={k === active} view={view} offs={offs} scroll={scrolls[k]} />)}
     </motion.div>
   );
 }
@@ -1445,6 +1475,9 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const liquidPull = useMotionValue(0);
   // V5 · Depth: how far (of one step) an overscroll has pushed the camera.
   const depthPull = useMotionValue(0);
+  // V3 · Carousel: each collection's own scroll (px into its rows).
+  const listScroll = React.useMemo(() => COLLECTIONS.map(() => motionValue(0)), []);
+  const trackSwitching = React.useRef(false);
   const activeRef = React.useRef(0);
   React.useEffect(() => { activeRef.current = active; }, [active]);
 
@@ -1527,6 +1560,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
        A gesture that crosses the threshold inside MIN_GAP of the last switch
        is queued and fires when the gap ends instead of being dropped. */
     const PAUSE = 180, REVERSE = 10;
+    const lt = { target: 0, anim: null };   // V3 list scroll: the eased notch, if any
     const g = { armed:true, acc:0, timer:0, last:0, first:0, lastT:0, lastSign:0,
                 prevA:0, run:0, coast:false, floor:0, pending:0, speed:0 };
     // Every collection here fits the stage. Measure the grid's layout height
@@ -1540,7 +1574,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       if (next < 0 || next >= COLLECTIONS.length) return;
       launchRef.current = { v: (down ? -1 : 1) * g.speed };
       release(true);
-      g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now(); g.coast = false;
+      g.armed = false; g.acc = 0; g.first = 0; g.last = performance.now(); g.coast = false; g.spent = true;
       setDir(down ? 1 : -1);
       setActive(next);
       // Land on the edge you travelled towards, so the next overscroll in the
@@ -1566,13 +1600,43 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
       if (g.coast) g.floor = Math.min(g.floor, a);
       const surged = g.coast && a > g.floor * 2 + 6;
       if (paused || reversed || surged) {
-        g.armed = true; g.acc = 0; g.first = 0; g.coast = false; g.run = 0;
+        g.armed = true; g.acc = 0; g.first = 0; g.coast = false; g.run = 0; g.spent = false;
       }
       g.prevA = a; g.lastT = now; g.lastSign = sign;
 
       clearTimeout(g.timer);
       g.timer = setTimeout(() => { g.armed = true; g.acc = 0; g.coast = false; release(); }, PAUSE);
 
+      /* V3 · long lists: scroll the list first, anywhere over the panel.
+         A gesture that moved the list is disarmed for the rest of its life,
+         so the scroll (and trackpad momentum) that reaches the end stops
+         there; only a fresh gesture — after a pause, a reversal, or a new
+         flick on top of the momentum — can switch collections. */
+      if (style === 'carousel') {
+        const k = activeRef.current, max = trackMax(k, el.clientHeight), sv = listScroll[k];
+        // An explicit flag: MotionValue.isAnimating() stayed true after an
+        // eased notch was stopped, so the next gesture skipped the list.
+        const switching = trackSwitching.current;
+        // A gesture that switched collections is spent: its momentum must not
+        // then scroll the list it just landed on.
+        if (g.spent) { e.preventDefault(); return; }
+        if (max > 0 && !switching) {
+          const base = lt.anim ? lt.target : sv.get();
+          const sNow = base;
+          if (down ? sNow < max - 0.5 : sNow > 0.5) {
+            e.preventDefault();
+            g.armed = false; g.acc = 0; release();
+            const nt = Math.max(0, Math.min(max, base + e.deltaY));
+            if (lt.anim) { lt.anim.stop(); sv.stop(); lt.anim = null; }
+            if (a >= 40) {
+              // Mouse-wheel notches: ease each step instead of jumping 100px.
+              lt.target = nt;
+              lt.anim = animate(sv, nt, { duration: 0.28, ease: [0.23, 1, 0.32, 1], onComplete: () => { lt.anim = null; } });
+            } else sv.set(nt);
+            return;
+          }
+        }
+      }
       // Over the rail or header there is no native scroll to hand the wheel
       // to, so the whole panel counts as being at an edge.
       const inStage = el.contains(e.target);
@@ -1635,6 +1699,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
   const syncFade = React.useCallback(() => {
     const el = stageRef.current, wrap = wrapRef.current;
     if (!el || !wrap) return;
+    if (style === 'carousel') return;   // its fades follow the track camera (below)
     // The carousel keeps its other sections laid out below the one in place
     // (hidden), which inflates scrollHeight; measure its layout box instead.
     const track = wrap.hasAttribute('data-track') && el.querySelector('.mp-presence');
@@ -2175,6 +2240,20 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
     m(); const ro = new ResizeObserver(m); ro.observe(el); return () => ro.disconnect();
   }, []);
 
+  /* V3 · long lists: the scroll fades follow the active list's scroll — a soft
+     top edge once you've scrolled in, a bottom edge while there's more below. */
+  React.useEffect(() => {
+    if (style !== 'carousel') return;
+    const wrap = wrapRef.current; if (!wrap) return;
+    const max = trackMax(active, stageMid * 2), sv = listScroll[active];
+    const sync = (sc) => {
+      wrap.style.setProperty('--fade-top', Math.max(0, Math.min(28, sc)).toFixed(1) + 'px');
+      wrap.style.setProperty('--fade-bot', Math.max(0, Math.min(44, max - sc)).toFixed(1) + 'px');
+    };
+    sync(sv.get());
+    return sv.on('change', sync);
+  }, [active, stageMid, style]);
+
   /* ---- rail selection ----
      `pos` is the fractional collection index the white selection row sits at.
      It springs to `active` on every switch, on the same spring as the grid. */
@@ -2329,7 +2408,7 @@ export default function MotionPanel({ fixedStyle, fixedMode, chrome = true }) {
         ) : style === 'chain' ? (
           <ChainTrack active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : style === 'carousel' ? (
-          <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} />
+          <CarouselTrack active={active} reduce={reduce} onSettle={() => setMoving(false)} view={stageMid * 2} launch={launchRef} switching={trackSwitching} scrolls={listScroll} />
         ) : style === 'stack' ? (
           <StackDeck active={active} reduce={reduce} launch={launchRef} onSettle={() => setMoving(false)} />
         ) : isSharedGrid ? (

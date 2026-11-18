@@ -226,7 +226,7 @@
    scrollable. Sections scale from their left edge, aligned to the rail. */
 .mp-stage-wrap[data-track] .mp-stage{overflow:hidden}
 .mp-track{position:relative}
-.mp-track-sec{position:absolute;left:0;right:0;transform-origin:0% 50%}
+.mp-track-sec{position:absolute;left:0;right:0;transform-origin:0% 50%;overflow:hidden}
 
 /* V2 · Deal heading — letters are dealt in one by one (see dealCharV). */
 .mp-title-ch{display:inline-block;transform-origin:50% 100%}
